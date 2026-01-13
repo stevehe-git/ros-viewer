@@ -190,8 +190,14 @@ const isActiveParent = (item: MenuItem): boolean => {
     // 顶级菜单项（航点管理、地图管理、任务管理等）
     return route.path === item.path
   } else if (item.children) {
-    // 有子项的菜单（导航、控制、分析、用户管理）- 不显示父级背景色
-    return false
+    // 有子项的菜单（导航、控制、分析、用户管理）
+    if (props.collapsed) {
+      // 收起状态：显示父级路由激活状态
+      return item.children.some(child => route.path === child.path)
+    } else {
+      // 展开状态：不显示父级背景色，只有次级路由显示
+      return false
+    }
   }
   return false
 }
