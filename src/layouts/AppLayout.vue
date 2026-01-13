@@ -18,53 +18,56 @@
 
       <!-- 导航菜单 -->
       <nav class="sidebar-nav">
-        <!-- 主导航项 -->
         <template v-for="route in mainNavigationRoutes" :key="route.name">
-          <div v-if="!route.children || route.children.length === 0" class="nav-item-wrapper">
-            <router-link
-              :to="route.path"
-              class="nav-item"
-              active-class="active"
-            >
-              <i :class="`icon-${route.meta?.icon || 'default'}`"></i>
-              <span v-if="!uiStore.uiState.sidebarCollapsed" class="nav-text">
-                {{ route.meta?.title || route.name }}
-              </span>
-            </router-link>
-          </div>
-
-          <!-- 带子菜单的主导航项 -->
-          <div v-else class="nav-group">
+          <!-- 导航组 -->
+          <div class="nav-group">
+            <!-- 父菜单项 -->
             <div
-              class="nav-item nav-group-header"
-              :class="{ expanded: expandedGroups.includes(route.name as string) }"
-              @click="toggleGroup(route.name as string)"
+              class="nav-item nav-parent"
+              :class="{
+                'is-expanded': isGroupExpanded(route.name),
+                'is-active': isParentActive(route)
+              }"
+              @click="toggleGroup(route.name)"
             >
-              <i :class="`icon-${route.meta?.icon || 'default'}`"></i>
-              <span v-if="!uiStore.uiState.sidebarCollapsed" class="nav-text">
-                {{ route.meta?.title || route.name }}
-              </span>
-              <i v-if="!uiStore.uiState.sidebarCollapsed" class="nav-arrow icon-chevron-down"></i>
-            </div>
-
-            <!-- 子导航项 -->
-            <div
-              v-if="!uiStore.uiState.sidebarCollapsed && expandedGroups.includes(route.name as string)"
-              class="nav-submenu"
-            >
-              <router-link
-                v-for="childRoute in route.children"
-                :key="childRoute.name"
-                :to="childRoute.path"
-                class="nav-item nav-submenu-item"
-                active-class="active"
-              >
-                <i :class="`icon-${childRoute.meta?.icon || 'default'}`"></i>
-                <span class="nav-text">
-                  {{ childRoute.meta?.title || childRoute.name }}
+              <div class="nav-item-content">
+                <i :class="`icon-${route.meta?.icon || 'default'}`"></i>
+                <span v-if="!uiStore.uiState.sidebarCollapsed" class="nav-text">
+                  {{ route.meta?.title || route.name }}
                 </span>
-              </router-link>
+              </div>
+              <i
+                v-if="!uiStore.uiState.sidebarCollapsed && route.children && route.children.length > 0"
+                class="nav-arrow"
+                :class="{ 'is-expanded': isGroupExpanded(route.name) }"
+              >
+                ▼
+              </i>
             </div>
+
+            <!-- 子菜单项 -->
+            <transition name="submenu">
+              <div
+                v-if="isGroupExpanded(route.name) && !uiStore.uiState.sidebarCollapsed"
+                class="nav-submenu"
+              >
+                <router-link
+                  v-for="childRoute in route.children"
+                  :key="childRoute.name"
+                  :to="childRoute.path"
+                  class="nav-item nav-child"
+                  :class="{ 'is-active': isChildActive(childRoute.path) }"
+                  active-class="is-active"
+                >
+                  <div class="nav-item-content">
+                    <i :class="`icon-${childRoute.meta?.icon || 'default'}`"></i>
+                    <span class="nav-text">
+                      {{ childRoute.meta?.title || childRoute.name }}
+                    </span>
+                  </div>
+                </router-link>
+              </div>
+            </transition>
           </div>
         </template>
       </nav>
@@ -115,41 +118,6 @@
         </div>
 
         <div class="toolbar-right">
-          <!-- 系统状态指示器 -->
-          <div class="status-indicators">
-            <div
-              class="status-indicator"
-              :class="robotStore.systemStatus"
-              :title="`系统状态: ${getStatusText(robotStore.systemStatus)}`"
-            >
-              <i class="status-icon"></i>
-            </div>
-
-            <div
-              class="status-indicator"
-              :class="robotStore.dataFreshness"
-              :title="`数据新鲜度: ${getFreshnessText(robotStore.dataFreshness)}`"
-            >
-              <i class="status-icon"></i>
-            </div>
-
-            <div class="status-indicator connection" :class="{ 'connected': hasActiveConnections }">
-              <i class="status-icon"></i>
-            </div>
-          </div>
-
-          <!-- 主题切换 -->
-          <div class="theme-selector">
-            <button
-              v-for="theme in ['light', 'dark', 'auto']"
-              :key="theme"
-              @click="uiStore.setTheme(theme as any)"
-              :class="{ 'active': uiStore.uiState.theme === theme }"
-              :title="`切换到${getThemeText(theme)}主题`"
-            >
-              <i :class="`icon-theme-${theme}`"></i>
-            </button>
-          </div>
         </div>
       </header>
 
@@ -176,19 +144,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useUIStore } from '../stores/ui'
-import { useRobotStore } from '../stores/robot'
-import { protocolManager } from '../core/protocols/ProtocolManager'
 import RobotSidebar from '../components/RobotSidebar.vue'
 import SettingsModal from '../components/SettingsModal.vue'
 
 // 路由和状态管理
 const route = useRoute()
-const router = useRouter()
 const uiStore = useUIStore()
-const robotStore = useRobotStore()
 
 // 导航状态
 const expandedGroups = ref<string[]>(['navigation', 'control', 'analysis'])
@@ -196,22 +160,58 @@ const expandedGroups = ref<string[]>(['navigation', 'control', 'analysis'])
 // 计算属性
 const currentRoute = computed(() => route)
 
-const mainNavigationRoutes = computed(() => {
-  const routes = router.getRoutes().filter(route =>
-    route.meta &&
-    !route.path.includes('*') &&
-    !route.path.includes('/:pathMatch') &&
-    route.name !== 'dashboard' &&
-    !route.path.includes('/') // 只获取顶级路由（路径不包含斜杠）
-  )
+// 检查路由是否匹配当前路径
+const isGroupExpanded = (groupName: string): boolean => {
+  return expandedGroups.value.includes(groupName)
+}
 
-  return routes.map(route => ({
-    ...route,
-    children: router.getRoutes().filter(childRoute =>
-      childRoute.path.startsWith(route.path + '/') &&
-      childRoute.path.split('/').length === route.path.split('/').length + 1
-    )
-  }))
+// 检查父菜单是否激活（当前路由是否属于该组）
+const isParentActive = (parentRoute: any): boolean => {
+  if (!parentRoute.children) return false
+  return parentRoute.children.some((child: any) => 
+    route.path === child.path || route.path.startsWith(child.path + '/')
+  )
+}
+
+// 检查子菜单项是否激活
+const isChildActive = (childPath: string): boolean => {
+  return route.path === childPath || route.path.startsWith(childPath + '/')
+}
+
+const mainNavigationRoutes = computed(() => {
+  // 直接使用路由配置中的父子关系
+  const navigation = {
+    name: 'navigation',
+    path: '/navigation',
+    meta: { title: '导航', icon: 'navigation' },
+    children: [
+      { name: 'navigation-rviz', path: '/navigation/rviz', meta: { title: 'RViz 可视化', icon: 'rviz' } },
+      { name: 'navigation-movebase', path: '/navigation/move_base', meta: { title: 'Move Base', icon: 'movebase' } }
+    ]
+  }
+
+  const control = {
+    name: 'control',
+    path: '/control',
+    meta: { title: '控制', icon: 'control' },
+    children: [
+      { name: 'control-task', path: '/control/task', meta: { title: '任务控制', icon: 'task' } },
+      { name: 'control-teleop', path: '/control/teleop', meta: { title: '遥控控制', icon: 'teleop' } },
+      { name: 'control-simulation', path: '/control/simulation', meta: { title: '仿真控制', icon: 'simulation' } }
+    ]
+  }
+
+  const analysis = {
+    name: 'analysis',
+    path: '/analysis',
+    meta: { title: '分析', icon: 'analysis' },
+    children: [
+      { name: 'analysis-bag', path: '/analysis/bag', meta: { title: 'Bag 分析', icon: 'bag' } },
+      { name: 'analysis-logs', path: '/analysis/logs', meta: { title: '日志分析', icon: 'logs' } }
+    ]
+  }
+
+  return [navigation, control, analysis]
 })
 
 const breadcrumb = computed(() => {
@@ -226,43 +226,11 @@ const breadcrumb = computed(() => {
   return crumbs
 })
 
-const hasActiveConnections = computed(() => {
-  return protocolManager.getAllActiveProtocols().size > 0
-})
-
 const hasVisiblePanels = computed(() => {
   // 虚拟侧边栏始终可见（如果侧边栏没有折叠）
   return !uiStore.uiState.sidebarCollapsed
 })
 
-// 方法
-function getStatusText(status: string): string {
-  const statusMap: Record<string, string> = {
-    'idle': '空闲',
-    'normal': '正常',
-    'warning': '警告',
-    'error': '错误'
-  }
-  return statusMap[status] || status
-}
-
-function getFreshnessText(freshness: string): string {
-  const freshnessMap: Record<string, string> = {
-    'fresh': '新鲜',
-    'normal': '正常',
-    'stale': '过期'
-  }
-  return freshnessMap[freshness] || freshness
-}
-
-function getThemeText(theme: string): string {
-  const themeMap: Record<string, string> = {
-    'light': '浅色',
-    'dark': '深色',
-    'auto': '自动'
-  }
-  return themeMap[theme] || theme
-}
 
 function toggleGroup(groupName: string): void {
   const index = expandedGroups.value.indexOf(groupName)
@@ -272,6 +240,20 @@ function toggleGroup(groupName: string): void {
     expandedGroups.value.push(groupName)
   }
 }
+
+// 自动展开包含当前路由的组
+watch(() => route.path, (newPath) => {
+  mainNavigationRoutes.value.forEach(route => {
+    if (route.children) {
+      const hasActiveChild = route.children.some((child: any) => 
+        newPath === child.path || newPath.startsWith(child.path + '/')
+      )
+      if (hasActiveChild && !expandedGroups.value.includes(route.name)) {
+        expandedGroups.value.push(route.name)
+      }
+    }
+  })
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -279,68 +261,120 @@ function toggleGroup(groupName: string): void {
   width: 100vw;
   height: 100vh;
   display: flex;
-  background: var(--bg-color);
-  color: var(--text-color);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #ffffff;
   transition: all 0.3s ease;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* 侧边栏 */
+/* 侧边栏 - 现代化玻璃拟态设计 */
 .sidebar {
-  width: 240px;
-  background: var(--sidebar-bg, #2d2d2d);
-  color: var(--sidebar-text, #e0e0e0);
+  width: 280px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: #ffffff;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border-color);
-  transition: width 0.3s ease;
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 100;
   position: sticky;
   top: 0;
   height: 100vh;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+  border-radius: 0 20px 20px 0;
 }
 
 .sidebar.collapsed {
-  width: 60px;
+  width: 72px;
+  border-radius: 0 12px 12px 0;
 }
 
 .sidebar-header {
-  height: 60px;
+  height: 80px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  position: relative;
+}
+
+.sidebar-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border-radius: 0 20px 0 0;
 }
 
 .logo {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 18px;
-  font-weight: 600;
+  gap: 16px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  z-index: 1;
+}
+
+.logo i {
+  font-size: 28px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 
 .logo-text {
-  transition: opacity 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .sidebar.collapsed .logo-text {
   opacity: 0;
+  transform: translateX(-10px);
   pointer-events: none;
+  width: 0;
+  overflow: hidden;
 }
 
 .sidebar-toggle {
-  background: none;
-  border: none;
-  color: var(--sidebar-text);
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
   cursor: pointer;
-  padding: 8px;
-  border-radius: 4px;
-  transition: background-color 0.2s;
+  padding: 10px;
+  border-radius: 12px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 1;
 }
 
 .sidebar-toggle:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+.sidebar-toggle:active {
+  transform: translateY(0);
 }
 
 /* 导航菜单 */
@@ -348,104 +382,244 @@ function toggleGroup(groupName: string): void {
   flex: 1;
   padding: 16px 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
 }
 
-.nav-item-wrapper {
-  margin-bottom: 4px;
+/* 自定义滚动条样式 */
+.sidebar-nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .nav-group {
   margin-bottom: 8px;
+  padding: 0 12px;
 }
 
+/* 导航项基础样式 */
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  color: var(--sidebar-text);
-  text-decoration: none;
-  transition: all 0.2s ease;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  margin: 0;
   border: none;
   background: none;
-  width: 100%;
   cursor: pointer;
-}
-
-.nav-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.nav-item.active {
-  background: var(--primary-color);
-  color: white;
-}
-
-.nav-group-header {
+  text-decoration: none;
+  color: #ffffff;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-.nav-group-header.expanded {
+.nav-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  transition: all 0.3s ease;
+  border-radius: 12px;
 }
 
-.nav-arrow {
-  margin-left: auto;
-  transition: transform 0.2s ease;
-  font-size: 12px;
-}
-
-.nav-group-header.expanded .nav-arrow {
-  transform: rotate(180deg);
-}
-
-.nav-submenu {
-  margin-left: 16px;
-  border-left: 2px solid rgba(255, 255, 255, 0.1);
-  animation: slideDown 0.2s ease;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    max-height: 0;
-  }
-  to {
-    opacity: 1;
-    max-height: 500px;
-  }
-}
-
-.nav-submenu-item {
-  padding: 8px 16px;
-  font-size: 13px;
-  opacity: 0.8;
-}
-
-.nav-submenu-item:hover {
-  opacity: 1;
-}
-
-.nav-submenu-item.active {
+.nav-item:hover::before {
   opacity: 1;
   background: rgba(255, 255, 255, 0.15);
 }
 
+.nav-item-content {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: 1;
+  padding: 16px 20px;
+  min-height: 52px;
+  justify-content: flex-start;
+  position: relative;
+  z-index: 1;
+}
+
+/* 父菜单项 */
+.nav-parent {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.nav-parent:hover {
+  transform: translateX(4px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+}
+
+.nav-parent.is-active {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.1) 100%);
+  color: #ffffff;
+  box-shadow: 0 8px 32px rgba(255, 255, 255, 0.1);
+  transform: translateX(4px);
+}
+
+.nav-parent.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 60%;
+  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+}
+
+/* 子菜单项 */
+.nav-child {
+  font-size: 14px;
+  font-weight: 500;
+  padding-left: 0;
+  margin-left: 16px;
+  margin-right: 16px;
+  margin-bottom: 4px;
+}
+
+.nav-child .nav-item-content {
+  padding: 12px 16px;
+  min-height: 44px;
+  border-radius: 10px;
+}
+
+.nav-child:hover {
+  transform: translateX(2px);
+}
+
+.nav-child.is-active {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(0, 153, 204, 0.2) 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 16px rgba(0, 212, 255, 0.15);
+}
+
+.nav-child.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 50%;
+  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.4);
+}
+
+/* 下拉箭头 */
+.nav-arrow {
+  padding: 12px 16px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.nav-arrow.is-expanded {
+  transform: rotate(180deg) scale(1.1);
+  color: #ffffff;
+}
+
+.nav-parent.is-expanded .nav-arrow {
+  transform: rotate(180deg) scale(1.1);
+}
+
+/* 子菜单容器 */
+.nav-submenu {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow: hidden;
+  border-radius: 0 0 12px 12px;
+  margin: 4px 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* 展开/折叠动画 */
+.submenu-enter-active,
+.submenu-leave-active {
+  transition: all 0.3s ease;
+  max-height: 500px;
+}
+
+.submenu-enter-from {
+  opacity: 0;
+  max-height: 0;
+  transform: translateY(-10px);
+}
+
+.submenu-leave-to {
+  opacity: 0;
+  max-height: 0;
+  transform: translateY(-10px);
+}
+
+.submenu-enter-to,
+.submenu-leave-from {
+  opacity: 1;
+  max-height: 500px;
+  transform: translateY(0);
+}
+
+/* 图标样式 */
 .nav-item i {
-  font-size: 18px;
-  width: 18px;
-  text-align: center;
+  font-size: 16px;
+  width: auto;
+  min-width: 16px;
+  text-align: left;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-right: 6px;
 }
 
 .nav-text {
-  transition: opacity 0.3s ease;
   flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 0.3s ease;
 }
 
+/* 侧边栏折叠时的样式 */
 .sidebar.collapsed .nav-text {
   opacity: 0;
   pointer-events: none;
+  width: 0;
 }
 
 .sidebar.collapsed .nav-submenu {
@@ -456,30 +630,49 @@ function toggleGroup(groupName: string): void {
   display: none;
 }
 
+.sidebar.collapsed .nav-item-content {
+  padding: 12px;
+  justify-content: center;
+}
+
 /* 侧边栏底部 */
 .sidebar-footer {
-  padding: 16px;
-  border-top: 1px solid var(--border-color);
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
   display: flex;
-  gap: 8px;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .footer-btn {
   flex: 1;
-  height: 36px;
+  height: 44px;
   background: rgba(255, 255, 255, 0.1);
-  border: none;
-  border-radius: 4px;
-  color: var(--sidebar-text);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  color: #ffffff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.2s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 16px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .footer-btn:hover {
   background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.footer-btn:active {
+  transform: translateY(0);
 }
 
 /* 主内容区域 */
@@ -489,60 +682,99 @@ function toggleGroup(groupName: string): void {
   flex-direction: column;
   min-width: 0; /* 防止 flex 子项溢出 */
   overflow: hidden;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 20px 0 0 0;
+  margin: 16px 16px 16px 0;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.1);
 }
 
 /* 顶部工具栏 */
 .top-toolbar {
-  height: 50px;
-  background: var(--toolbar-bg, #fff);
-  border-bottom: 1px solid var(--border-color);
+  height: 70px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  box-shadow: 0 2px 4px var(--shadow-color);
+  padding: 0 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   flex-shrink: 0;
+  border-radius: 20px 0 0 0;
+  position: relative;
+}
+
+.top-toolbar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border-radius: 20px 0 0 0;
 }
 
 .toolbar-left {
   flex: 1;
+  position: relative;
+  z-index: 1;
 }
 
 .page-title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-color);
+  font-size: 24px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .toolbar-center {
   flex: 2;
   display: flex;
   justify-content: center;
+  position: relative;
+  z-index: 1;
 }
 
 .breadcrumb {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   font-size: 14px;
-  color: var(--text-secondary);
+  color: #666;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 8px 16px;
+  border-radius: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .breadcrumb-item {
-  padding: 4px 8px;
-  border-radius: 4px;
-  transition: background-color 0.2s;
+  padding: 6px 12px;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  font-weight: 500;
 }
 
 .breadcrumb-item.active {
-  background: var(--primary-color);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 .breadcrumb-separator {
-  margin: 0 4px;
-  color: var(--text-secondary);
+  margin: 0 8px;
+  color: #999;
+  font-weight: bold;
 }
 
 .toolbar-right {
@@ -550,139 +782,90 @@ function toggleGroup(groupName: string): void {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 16px;
-}
-
-/* 状态指示器 */
-.status-indicators {
-  display: flex;
-  gap: 8px;
-}
-
-.status-indicator {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
+  gap: 20px;
   position: relative;
+  z-index: 1;
 }
 
-.status-indicator::before {
-  content: '';
-  position: absolute;
-  top: -2px;
-  left: -2px;
-  right: -2px;
-  bottom: -2px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.3;
-  animation: pulse 2s infinite;
-}
 
-.status-indicator.idle {
-  color: #757575;
-}
-
-.status-indicator.normal {
-  color: #4CAF50;
-}
-
-.status-indicator.warning {
-  color: #FF9800;
-}
-
-.status-indicator.error {
-  color: #f44336;
-}
-
-.status-indicator.fresh {
-  color: #4CAF50;
-}
-
-.status-indicator.stale {
-  color: #f44336;
-}
-
-.status-indicator.connection:not(.connected) {
-  color: #f44336;
-}
-
-.status-indicator.connection.connected {
-  color: #4CAF50;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 0.3;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.6;
-    transform: scale(1.2);
-  }
-}
-
-/* 主题选择器 */
-.theme-selector {
-  display: flex;
-  gap: 4px;
-}
-
-.theme-selector button {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-color);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.theme-selector button:hover {
-  background: var(--hover-bg, rgba(0, 0, 0, 0.1));
-}
-
-.theme-selector button.active {
-  background: var(--primary-color);
-  color: white;
-}
 
 /* 页面内容 */
 .page-content {
   flex: 1;
   overflow: hidden;
   position: relative;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 0 0 20px 0;
+  margin: 16px;
+  margin-top: 0;
+  margin-right: 0;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.05);
 }
 
 /* 右侧面板 */
 .right-panels {
-  width: 280px;
-  min-width: 280px;
-  max-width: 320px;
-  background: var(--bg-color);
-  border-left: 1px solid var(--border-color);
+  width: 320px;
+  min-width: 320px;
+  max-width: 380px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-left: 1px solid rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
   flex-shrink: 0;
+  border-radius: 20px 0 0 20px;
+  margin: 16px 16px 16px 0;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.1);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(102, 126, 234, 0.3) transparent;
+}
+
+.right-panels::-webkit-scrollbar {
+  width: 6px;
+}
+
+.right-panels::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.right-panels::-webkit-scrollbar-thumb {
+  background: rgba(102, 126, 234, 0.3);
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+.right-panels::-webkit-scrollbar-thumb:hover {
+  background: rgba(102, 126, 234, 0.5);
 }
 
 .panel {
-  margin: 16px;
-  background: var(--panel-bg, #fff);
-  border-radius: 8px;
-  box-shadow: 0 2px 8px var(--shadow-color);
+  margin: 20px;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.panel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
 }
 
 .robot-sidebar-panel {
   margin: 0;
   height: 100%;
   box-shadow: none;
+  background: transparent;
+  border: none;
 }
 
 .panel:first-child {
@@ -730,31 +913,139 @@ function toggleGroup(groupName: string): void {
   overflow-y: auto;
 }
 
-/* 图标样式 */
-.icon-robot::before { content: "🤖"; }
-.icon-chevron-left::before { content: "◀"; }
-.icon-chevron-right::before { content: "▶"; }
-.icon-minimize::before { content: "⛶"; }
-.icon-maximize::before { content: "⛶"; }
-.icon-settings::before { content: "⚙"; }
-.icon-close::before { content: "×"; }
-.icon-theme-light::before { content: "☀"; }
-.icon-theme-dark::before { content: "☾"; }
-.icon-theme-auto::before { content: "◐"; }
+/* 图标样式 - 现代化设计 */
+.icon-robot::before {
+  content: "🤖";
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.icon-chevron-left::before {
+  content: "◀";
+  font-weight: bold;
+}
+
+.icon-chevron-right::before {
+  content: "▶";
+  font-weight: bold;
+}
+
+.icon-minimize::before {
+  content: "⊡";
+  font-size: 18px;
+  line-height: 1;
+}
+
+.icon-maximize::before {
+  content: "⊞";
+  font-size: 18px;
+  line-height: 1;
+}
+
+.icon-settings::before {
+  content: "⚙";
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.icon-close::before {
+  content: "✕";
+  font-weight: bold;
+  color: #f44336;
+}
+
+
+/* 导航图标 - 使用更现代的图标 */
+.icon-navigation::before {
+  content: "🧭";
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.icon-rviz::before {
+  content: "📊";
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.icon-movebase::before {
+  content: "🎯";
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.icon-control::before {
+  content: "🎮";
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.icon-task::before {
+  content: "📋";
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.icon-teleop::before {
+  content: "🚀";
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.icon-simulation::before {
+  content: "🖥️";
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.icon-analysis::before {
+  content: "📈";
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.icon-bag::before {
+  content: "📦";
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.icon-logs::before {
+  content: "📝";
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
+}
+
+.icon-default::before {
+  content: "●";
+  color: #667eea;
+}
 
 /* 响应式设计 */
-@media (max-width: 1200px) {
+@media (max-width: 1400px) {
   .sidebar {
-    width: 200px;
+    width: 260px;
   }
 
   .sidebar.collapsed {
-    width: 50px;
+    width: 72px;
   }
 
   .right-panels {
-    width: 250px;
-    min-width: 250px;
+    width: 280px;
+    min-width: 280px;
+    max-width: 320px;
+  }
+
+  .main-content {
+    margin: 12px 12px 12px 0;
+  }
+
+  .right-panels {
+    margin: 12px 12px 12px 0;
+  }
+}
+
+@media (max-width: 1200px) {
+  .sidebar {
+    width: 240px;
+  }
+
+  .sidebar.collapsed {
+    width: 72px;
+  }
+
+  .right-panels {
+    width: 260px;
+    min-width: 260px;
     max-width: 300px;
   }
 }
@@ -762,6 +1053,7 @@ function toggleGroup(groupName: string): void {
 @media (max-width: 768px) {
   .app-layout {
     flex-direction: column;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   }
 
   .sidebar {
@@ -769,6 +1061,9 @@ function toggleGroup(groupName: string): void {
     height: auto;
     position: relative;
     transform: none;
+    border-radius: 0 0 20px 20px;
+    margin: 0;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
   }
 
   .sidebar.collapsed {
@@ -778,32 +1073,110 @@ function toggleGroup(groupName: string): void {
   .main-content {
     width: 100%;
     order: 2;
+    margin: 16px 16px 16px 16px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.95);
   }
 
   .right-panels {
     width: 100%;
     order: 3;
-    max-height: 40vh;
+    max-height: 50vh;
     border-left: none;
-    border-top: 1px solid var(--border-color);
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 20px;
+    margin: 0 16px 16px 16px;
+    background: rgba(255, 255, 255, 0.9);
   }
 
   .page-content {
-    min-height: calc(100vh - 110px);
+    min-height: calc(100vh - 200px);
+    border-radius: 0 0 20px 20px;
   }
 
   .toolbar-center {
     display: none;
   }
+
+  .top-toolbar {
+    border-radius: 20px 20px 0 0;
+    height: 60px;
+    padding: 0 20px;
+  }
+
+  .page-title {
+    font-size: 20px;
+  }
 }
 
-/* 深色主题支持 */
-[data-theme="dark"] {
-  --sidebar-bg: #1a1a1a;
-  --sidebar-text: #e0e0e0;
-  --toolbar-bg: #2d2d2d;
-  --panel-bg: #2d2d2d;
-  --header-bg: #373737;
-  --hover-bg: rgba(255, 255, 255, 0.1);
+
+/* 现代化动画增强 */
+.nav-item {
+  animation: fadeInUp 0.5s ease-out;
+  animation-fill-mode: both;
+}
+
+.nav-item:nth-child(1) { animation-delay: 0.1s; }
+.nav-item:nth-child(2) { animation-delay: 0.15s; }
+.nav-item:nth-child(3) { animation-delay: 0.2s; }
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 悬停时的微妙效果 */
+.nav-parent:hover .nav-text {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.6) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 激活状态的发光效果 */
+.nav-parent.is-active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(0, 153, 204, 0.1) 100%);
+  border-radius: 12px;
+  z-index: -1;
+}
+
+/* 滚动时的平滑效果 */
+.sidebar-nav {
+  scroll-behavior: smooth;
+}
+
+/* 聚焦状态 */
+.nav-item:focus-visible {
+  outline: 2px solid #667eea;
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+
+/* 加载动画 */
+@keyframes shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+.nav-item.loading {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.1) 25%, rgba(255, 255, 255, 0.2) 50%, rgba(255, 255, 255, 0.1) 75%);
+  background-size: 200px 100%;
+  animation: shimmer 1.5s infinite;
 }
 </style>
