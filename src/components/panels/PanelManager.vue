@@ -1,5 +1,5 @@
 <template>
-  <div class="panel-manager">
+  <div v-if="hasActivePanels" class="panel-manager">
     <!-- 选中的面板 -->
     <div class="active-panels">
       <ViewControlPanel
@@ -80,6 +80,10 @@ const isPanelEnabled = (panelId: string): boolean => {
   return props.enabledPanels.includes(panelId)
 }
 
+const hasActivePanels = computed(() => {
+  return props.enabledPanels.length > 0
+})
+
 defineEmits<{
   resetCamera: []
   toggleGrid: []
@@ -106,6 +110,7 @@ defineEmits<{
   background: #f5f7fa;
   overflow-y: auto;
   border-left: 1px solid #e4e7ed;
+  max-height: 100%;
 }
 
 .panel-settings {

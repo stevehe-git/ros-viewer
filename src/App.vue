@@ -47,5 +47,6 @@ const toggleSidebar = () => {
   padding: 0px;
   overflow-y: auto;
   min-height: calc(100vh - 60px);
+  max-height: calc(100vh - 60px);
 }
 </style>

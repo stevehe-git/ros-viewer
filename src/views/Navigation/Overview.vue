@@ -129,5 +129,6 @@ document.addEventListener('msfullscreenchange', () => {
   position: relative;
   overflow: hidden;
   min-height: 0;
+  max-height: calc(100vh - 60px - 20px); /* header高度 + 一些padding */
 }
 </style>

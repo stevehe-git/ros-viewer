@@ -4,6 +4,7 @@
 
     <!-- 面板管理系统 -->
     <PanelManager
+      v-if="enabledPanels.length > 0"
       :enabled-panels="enabledPanels"
       :camera-mode="cameraMode"
       :show-grid="showGrid"
@@ -72,7 +73,7 @@ const showMap = ref(true)
 const showPath = ref(false)
 const showLaser = ref(false)
 const cameraMode = ref('orbit')
-const backgroundColor = ref('#1a1a1a')
+const backgroundColor = ref('#fdfdfd')
 const fps = ref(60)
 const cameraPos = ref({ x: 0, y: 0, z: 0 })
 const objectCount = ref(0)
@@ -458,13 +459,18 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   height: 100%;
+  max-height: 100vh;
   display: flex;
+  overflow: hidden;
 }
 
 .viewer-container {
   flex: 1;
   position: relative;
   background: #1a1a1a;
+  max-height: 100%;
+  overflow: hidden;
+  transition: width 0.3s ease;
 }
 
 </style>
