@@ -1,10 +1,21 @@
 <template>
-  <div class="rviz-viewer">
-    <div class="viewer-container" ref="containerRef"></div>
+  <div class="rviz-viewer" :class="{ resizing: isResizing }">
+    <div class="viewer-container" ref="containerRef" :style="{ width: viewerWidth }"></div>
+
+    <!-- 可拖动分割条 -->
+    <div
+      v-if="enabledPanels.length > 0"
+      class="splitter"
+      @mousedown="startResize"
+      :class="{ resizing: isResizing }"
+    >
+      <div class="splitter-handle"></div>
+    </div>
 
     <!-- 面板管理系统 -->
     <PanelManager
       v-if="enabledPanels.length > 0"
+      ref="panelManagerRef"
       :enabled-panels="enabledPanels"
       :camera-mode="cameraMode"
       :show-grid="showGrid"
@@ -73,8 +84,16 @@ const emit = defineEmits<{
 
 // Refs
 const containerRef = ref<HTMLElement>()
+const panelManagerRef = ref<InstanceType<typeof PanelManager> | null>(null)
 let resizeObserver: ResizeObserver | null = null
 let resizeTimer: number | null = null
+
+// 分割条相关
+const viewerWidth = ref('calc(100% - 300px)')
+const panelWidth = ref(300)
+const isResizing = ref(false)
+let startX = 0
+let startPanelWidth = 0
 
 // 中键平移相关
 let isMiddleMouseDown = false
@@ -590,6 +609,67 @@ const handleRenameDisplay = (itemId: string, newName: string) => {
   // 可以在这里重命名显示项
 }
 
+// 分割条拖动功能
+const startResize = (e: MouseEvent) => {
+  e.preventDefault()
+  isResizing.value = true
+  startX = e.clientX
+  
+  // 获取当前宽度
+  startPanelWidth = panelWidth.value
+
+  // 添加全局事件监听
+  document.addEventListener('mousemove', handleResize)
+  document.addEventListener('mouseup', stopResize)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
+const handleResize = (e: MouseEvent) => {
+  if (!isResizing.value) return
+
+  const deltaX = e.clientX - startX
+  const newPanelWidth = Math.max(200, Math.min(600, startPanelWidth - deltaX))
+  const newViewerWidth = `calc(100% - ${newPanelWidth}px)`
+
+  panelWidth.value = newPanelWidth
+  viewerWidth.value = newViewerWidth
+
+  // 更新面板管理器宽度
+  if (panelManagerRef.value) {
+    const panelElement = (panelManagerRef.value.$el as HTMLElement)
+    if (panelElement) {
+      panelElement.style.width = `${newPanelWidth}px`
+    }
+  }
+
+  // 触发窗口resize以更新3D视图
+  onWindowResize()
+}
+
+const stopResize = () => {
+  isResizing.value = false
+  document.removeEventListener('mousemove', handleResize)
+  document.removeEventListener('mouseup', stopResize)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+
+  // 保存宽度到localStorage
+  localStorage.setItem('rviz-panel-width', panelWidth.value.toString())
+}
+
+// 加载保存的面板宽度
+const loadPanelWidth = () => {
+  const saved = localStorage.getItem('rviz-panel-width')
+  if (saved) {
+    const width = parseInt(saved, 10)
+    if (width >= 200 && width <= 600) {
+      panelWidth.value = width
+      viewerWidth.value = `calc(100% - ${width}px)`
+    }
+  }
+}
+
 const updateFPS = () => {
   frameCount++
   const currentTime = performance.now()
@@ -664,7 +744,14 @@ watch(backgroundColor, (val: string) => {
 })
 
 // 监听面板变化，当面板显示/隐藏时触发resize
-watch(() => props.enabledPanels, () => {
+watch(() => props.enabledPanels, (newPanels) => {
+  // 如果面板被隐藏，恢复viewer-container为100%宽度
+  if (newPanels.length === 0) {
+    viewerWidth.value = '100%'
+  } else {
+    // 如果有面板，使用保存的宽度
+    viewerWidth.value = `calc(100% - ${panelWidth.value}px)`
+  }
   // 延迟执行，等待DOM更新完成
   nextTick(() => {
     setTimeout(() => {
@@ -674,6 +761,16 @@ watch(() => props.enabledPanels, () => {
 }, { deep: true })
 
 onMounted(() => {
+  loadPanelWidth()
+  // 初始化面板管理器宽度
+  nextTick(() => {
+    if (panelManagerRef.value) {
+      const panelElement = (panelManagerRef.value.$el as HTMLElement)
+      if (panelElement) {
+        panelElement.style.width = `${panelWidth.value}px`
+      }
+    }
+  })
   initScene()
 })
 
@@ -729,15 +826,51 @@ onUnmounted(() => {
   min-height: 0;
 }
 
+.rviz-viewer.resizing {
+  user-select: none;
+}
+
 .viewer-container {
-  flex: 1;
   position: relative;
   background: #1a1a1a;
   height: 100%;
-  width: 100%;
   overflow: hidden;
-  transition: width 0.3s ease, flex 0.3s ease;
-  min-width: 0;
+  min-width: 200px;
+  flex-shrink: 0;
+}
+
+.rviz-viewer.resizing .viewer-container {
+  transition: none;
+}
+
+.splitter {
+  width: 4px;
+  background: #dcdfe6;
+  cursor: col-resize;
+  position: relative;
+  flex-shrink: 0;
+  z-index: 10;
+  transition: background 0.2s;
+  user-select: none;
+}
+
+.splitter:hover {
+  background: #409eff;
+}
+
+.splitter.resizing {
+  background: #409eff;
+  width: 4px;
+}
+
+.splitter-handle {
+  position: absolute;
+  top: 0;
+  left: -2px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 1;
 }
 
 </style>

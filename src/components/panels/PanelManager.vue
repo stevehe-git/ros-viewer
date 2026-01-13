@@ -157,12 +157,18 @@ const emit = defineEmits<{
 <style scoped>
 .panel-manager {
   width: 300px;
+  min-width: 200px;
+  max-width: 600px;
   padding: 16px;
   background: #f5f7fa;
   overflow-y: auto;
-  border-left: 1px solid #e4e7ed;
   height: 100%;
   flex-shrink: 0;
+  transition: width 0.2s ease;
+}
+
+.rviz-viewer.resizing .panel-manager {
+  transition: none;
 }
 
 .panel-settings {
