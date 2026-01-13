@@ -72,11 +72,13 @@ defineEmits<{
   left: 180px;
   right: 0;
   z-index: 100;
-  transition: left 0.3s ease;
+  transition: left 0.3s ease, width 0.3s ease;
+  width: calc(100% - 180px);
 }
 
 .header.sidebar-collapsed {
   left: 60px;
+  width: calc(100% - 60px);
 }
 
 .header-left {

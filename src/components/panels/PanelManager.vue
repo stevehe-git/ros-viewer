@@ -49,7 +49,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import ViewControlPanel from './ViewControlPanel.vue'
 import SceneInfoPanel from './SceneInfoPanel.vue'
 import ToolPanel from './ToolPanel.vue'
@@ -77,7 +77,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const isPanelEnabled = (panelId: string): boolean => {
-  return props.enabledPanels.includes(panelId)
+  return props.enabledPanels.indexOf(panelId) !== -1
 }
 
 const hasActivePanels = computed(() => {
@@ -110,7 +110,8 @@ defineEmits<{
   background: #f5f7fa;
   overflow-y: auto;
   border-left: 1px solid #e4e7ed;
-  max-height: 100%;
+  height: 100%;
+  flex-shrink: 0;
 }
 
 .panel-settings {

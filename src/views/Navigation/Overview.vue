@@ -106,21 +106,24 @@ document.addEventListener('msfullscreenchange', () => {
   display: flex;
   flex-direction: column;
   background: #f5f7fa;
+  overflow: hidden;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
+  padding: 12px 16px;
   background: white;
   border-bottom: 1px solid #e4e7ed;
+  flex-shrink: 0;
+  min-height: 48px;
 }
 
 .page-header h2 {
   margin: 0;
   color: #303133;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
 }
 
@@ -129,6 +132,6 @@ document.addEventListener('msfullscreenchange', () => {
   position: relative;
   overflow: hidden;
   min-height: 0;
-  max-height: calc(100vh - 60px - 20px); /* header高度 + 一些padding */
+  width: 100%;
 }
 </style>

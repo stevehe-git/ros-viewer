@@ -35,18 +35,25 @@ const toggleSidebar = () => {
   display: flex;
   flex-direction: column;
   transition: margin-left 0.3s ease;
+  height: 100vh;
+  overflow: hidden;
+  min-width: 0;
+  width: calc(100% - 180px);
 }
 
 .main-content.sidebar-collapsed {
   margin-left: 60px;
+  width: calc(100% - 60px);
 }
 
 .content-wrapper {
   margin-top: 60px;
   flex: 1;
   padding: 0px;
-  overflow-y: auto;
-  min-height: calc(100vh - 60px);
-  max-height: calc(100vh - 60px);
+  overflow: hidden;
+  height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 </style>

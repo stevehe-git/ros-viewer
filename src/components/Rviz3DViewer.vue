@@ -42,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import PanelManager from './panels/PanelManager.vue'
@@ -57,6 +57,8 @@ const props = withDefaults(defineProps<Props>(), {
 
 // Refs
 const containerRef = ref<HTMLElement>()
+let resizeObserver: ResizeObserver | null = null
+let resizeTimer: number | null = null
 
 // 场景相关
 let scene: THREE.Scene
@@ -157,6 +159,27 @@ const initScene = () => {
   // 窗口大小调整
   window.addEventListener('resize', onWindowResize)
 
+  // 使用ResizeObserver监听容器尺寸变化（更可靠）
+  if (containerRef.value && window.ResizeObserver) {
+    resizeObserver = new ResizeObserver((entries) => {
+      // 使用防抖避免频繁调用
+      if (resizeTimer) {
+        cancelAnimationFrame(resizeTimer)
+      }
+      resizeTimer = requestAnimationFrame(() => {
+        for (const entry of entries) {
+          const { width, height } = entry.contentRect
+          if (width > 0 && height > 0 && renderer && camera) {
+            camera.aspect = width / height
+            camera.updateProjectionMatrix()
+            renderer.setSize(width, height)
+          }
+        }
+      })
+    })
+    resizeObserver.observe(containerRef.value)
+  }
+
   // 开始渲染循环
   animate()
 }
@@ -239,14 +262,24 @@ const toggleAxes = () => {
 }
 
 const onWindowResize = () => {
-  if (!containerRef.value) return
+  if (!containerRef.value || !renderer || !camera) return
 
-  const width = containerRef.value.clientWidth
-  const height = containerRef.value.clientHeight
+  // 使用requestAnimationFrame确保在下一帧更新，避免布局抖动
+  if (resizeTimer) {
+    cancelAnimationFrame(resizeTimer)
+  }
 
-  camera.aspect = width / height
-  camera.updateProjectionMatrix()
-  renderer.setSize(width, height)
+  resizeTimer = requestAnimationFrame(() => {
+    const width = containerRef.value!.clientWidth
+    const height = containerRef.value!.clientHeight
+
+    // 确保尺寸有效
+    if (width > 0 && height > 0) {
+      camera.aspect = width / height
+      camera.updateProjectionMatrix()
+      renderer.setSize(width, height)
+    }
+  })
 }
 
 const updateObjectCount = () => {
@@ -443,6 +476,16 @@ watch(backgroundColor, (val: string) => {
   }
 })
 
+// 监听面板变化，当面板显示/隐藏时触发resize
+watch(() => props.enabledPanels, () => {
+  // 延迟执行，等待DOM更新完成
+  nextTick(() => {
+    setTimeout(() => {
+      onWindowResize()
+    }, 100)
+  })
+}, { deep: true })
+
 onMounted(() => {
   initScene()
 })
@@ -453,7 +496,18 @@ onUnmounted(() => {
     cancelAnimationFrame(animationId)
   }
 
+  if (resizeTimer) {
+    cancelAnimationFrame(resizeTimer)
+  }
+
   window.removeEventListener('resize', onWindowResize)
+
+  // 清理ResizeObserver
+  if (resizeObserver && containerRef.value) {
+    resizeObserver.unobserve(containerRef.value)
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
 
   if (renderer) {
     renderer.dispose()
@@ -470,18 +524,20 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   height: 100%;
-  max-height: 100vh;
   display: flex;
   overflow: hidden;
+  min-height: 0;
 }
 
 .viewer-container {
   flex: 1;
   position: relative;
   background: #1a1a1a;
-  max-height: 100%;
+  height: 100%;
+  width: 100%;
   overflow: hidden;
-  transition: width 0.3s ease;
+  transition: width 0.3s ease, flex 0.3s ease;
+  min-width: 0;
 }
 
 </style>
