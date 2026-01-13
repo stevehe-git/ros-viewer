@@ -283,7 +283,7 @@ const handleCurrentChange = (val: number) => {
 
 // 工具方法
 const getTypeColor = (type: string) => {
-  const colors = {
+  const colors: Record<string, string> = {
     building: 'primary',
     outdoor: 'success',
     warehouse: 'warning',
@@ -293,7 +293,7 @@ const getTypeColor = (type: string) => {
 }
 
 const getTypeText = (type: string) => {
-  const texts = {
+  const texts: Record<string, string> = {
     building: '建筑',
     outdoor: '室外',
     warehouse: '仓库',
@@ -303,7 +303,7 @@ const getTypeText = (type: string) => {
 }
 
 const getStatusColor = (status: string) => {
-  const colors = {
+  const colors: Record<string, string> = {
     active: 'success',
     draft: 'warning',
     archived: 'info'
@@ -312,7 +312,7 @@ const getStatusColor = (status: string) => {
 }
 
 const getStatusText = (status: string) => {
-  const texts = {
+  const texts: Record<string, string> = {
     active: '活跃',
     draft: '草稿',
     archived: '归档'
