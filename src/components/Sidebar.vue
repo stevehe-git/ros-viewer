@@ -187,11 +187,11 @@ const menuItems: MenuItem[] = [
 
 const isActiveParent = (item: MenuItem): boolean => {
   if (item.path) {
-    // 顶级菜单项
+    // 顶级菜单项（航点管理、地图管理、任务管理等）
     return route.path === item.path
   } else if (item.children) {
-    // 有子项的菜单
-    return item.children.some(child => route.path === child.path)
+    // 有子项的菜单（导航、控制、分析、用户管理）- 不显示父级背景色
+    return false
   }
   return false
 }
