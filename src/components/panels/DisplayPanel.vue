@@ -84,264 +84,17 @@
           </div>
         </div>
 
-        <!-- Grid -->
-        <div class="display-item" :class="{ active: selectedItem === 'grid' }" @click="selectItem('grid')">
-          <div class="display-item-header" @click.stop="toggleItem('grid')">
-            <el-icon class="item-icon">
-              <Grid />
-            </el-icon>
-            <el-checkbox
-              v-model="gridOptions.enabled"
-              @change="updateGridOptions"
-              @click.stop
-            />
-            <span class="item-name">Grid</span>
-            <el-icon class="expand-icon" :class="{ expanded: expandedItems['grid'] }">
-              <ArrowDown />
-            </el-icon>
-          </div>
-          <div v-show="expandedItems['grid']" class="display-item-content">
-            <!-- Grid Status -->
-            <div class="display-sub-item">
-              <div class="sub-item-header" @click.stop="toggleSubItem('grid-status')">
-                <el-icon class="sub-item-icon success-icon">
-                  <CircleCheck />
-                </el-icon>
-                <span class="sub-item-name">Status: Ok</span>
-                <el-icon class="expand-icon" :class="{ expanded: expandedSubItems['grid-status'] }">
-                  <ArrowDown />
-                </el-icon>
-              </div>
-              <div v-show="expandedSubItems['grid-status']" class="sub-item-content">
-                <!-- Status content can be added here if needed -->
-              </div>
-            </div>
-
-            <div class="config-row">
-              <span class="config-label">Reference Frame</span>
-              <el-select
-                v-model="gridOptions.referenceFrame"
-                size="small"
-                class="config-value"
-                @change="updateGridOptions"
-              >
-                <el-option label="<Fixed Frame>" value="<Fixed Frame>" />
-              </el-select>
-            </div>
-            <div class="config-row">
-              <span class="config-label">Plane Cell Count</span>
-              <el-input-number
-                v-model="gridOptions.planeCellCount"
-                size="small"
-                :min="1"
-                :max="100"
-                class="config-value"
-                @change="updateGridOptions"
-              />
-            </div>
-            <div class="config-row">
-              <span class="config-label">Normal Cell Count</span>
-              <el-input-number
-                v-model="gridOptions.normalCellCount"
-                size="small"
-                :min="0"
-                :max="100"
-                class="config-value"
-                @change="updateGridOptions"
-              />
-            </div>
-            <div class="config-row">
-              <span class="config-label">Cell Size</span>
-              <el-input-number
-                v-model="gridOptions.cellSize"
-                size="small"
-                :min="0.1"
-                :max="10"
-                :step="0.1"
-                class="config-value"
-                @change="updateGridOptions"
-              />
-            </div>
-            <div class="config-row">
-              <span class="config-label">Line Style</span>
-              <el-select
-                v-model="gridOptions.lineStyle"
-                size="small"
-                class="config-value"
-                @change="updateGridOptions"
-              >
-                <el-option label="Lines" value="Lines" />
-                <el-option label="Billboards" value="Billboards" />
-              </el-select>
-            </div>
-            <div class="config-row">
-              <span class="config-label">Color</span>
-              <div class="config-value color-config">
-                <el-color-picker
-                  v-model="gridOptions.color"
-                  size="small"
-                  @change="updateGridOptions"
-                />
-                <span class="color-text">{{ formatColor(gridOptions.color) }}</span>
-              </div>
-            </div>
-            <div class="config-row">
-              <span class="config-label">Alpha</span>
-              <el-input-number
-                v-model="gridOptions.alpha"
-                size="small"
-                :min="0"
-                :max="1"
-                :step="0.1"
-                class="config-value"
-                @change="updateGridOptions"
-              />
-            </div>
-            <div class="config-row">
-              <span class="config-label">Plane</span>
-              <el-select
-                v-model="gridOptions.plane"
-                size="small"
-                class="config-value"
-                @change="updateGridOptions"
-              >
-                <el-option label="XY" value="XY" />
-                <el-option label="XZ" value="XZ" />
-                <el-option label="YZ" value="YZ" />
-              </el-select>
-            </div>
-            <!-- Offset (collapsed by default) -->
-            <div class="display-sub-item">
-              <div class="sub-item-header" @click.stop="toggleSubItem('grid-offset')">
-                <el-icon class="expand-icon" :class="{ expanded: expandedSubItems['grid-offset'] }">
-                  <ArrowRight />
-                </el-icon>
-                <span class="sub-item-name">Offset</span>
-                <span class="config-value-text">{{ gridOptions.offset }}</span>
-              </div>
-              <div v-show="expandedSubItems['grid-offset']" class="sub-item-content">
-                <div class="config-row">
-                  <span class="config-label">X</span>
-                  <el-input-number
-                    v-model="gridOptions.offsetX"
-                    size="small"
-                    class="config-value"
-                    @change="updateGridOffset"
-                  />
-                </div>
-                <div class="config-row">
-                  <span class="config-label">Y</span>
-                  <el-input-number
-                    v-model="gridOptions.offsetY"
-                    size="small"
-                    class="config-value"
-                    @change="updateGridOffset"
-                  />
-                </div>
-                <div class="config-row">
-                  <span class="config-label">Z</span>
-                  <el-input-number
-                    v-model="gridOptions.offsetZ"
-                    size="small"
-                    class="config-value"
-                    @change="updateGridOffset"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Axes -->
-        <div class="display-item" :class="{ active: selectedItem === 'axes' }" @click="selectItem('axes')">
-          <div class="display-item-header" @click.stop="toggleItem('axes')">
-            <el-icon class="item-icon">
-              <Position />
-            </el-icon>
-            <el-checkbox
-              v-model="axesOptions.enabled"
-              @change="updateAxesOptions"
-              @click.stop
-            />
-            <span class="item-name">Axes</span>
-            <el-icon class="expand-icon" :class="{ expanded: expandedItems['axes'] }">
-              <ArrowDown />
-            </el-icon>
-          </div>
-          <div v-show="expandedItems['axes']" class="display-item-content">
-            <!-- Axes Status -->
-            <div class="display-sub-item">
-              <div class="sub-item-header" @click.stop="toggleSubItem('axes-status')">
-                <el-icon class="sub-item-icon success-icon">
-                  <CircleCheck />
-                </el-icon>
-                <span class="sub-item-name">Status: Ok</span>
-                <el-icon class="expand-icon" :class="{ expanded: expandedSubItems['axes-status'] }">
-                  <ArrowDown />
-                </el-icon>
-              </div>
-              <div v-show="expandedSubItems['axes-status']" class="sub-item-content">
-                <!-- Status content can be added here if needed -->
-              </div>
-            </div>
-
-            <div class="config-row">
-              <span class="config-label">Reference Frame</span>
-              <el-select
-                v-model="axesOptions.referenceFrame"
-                size="small"
-                class="config-value"
-                @change="updateAxesOptions"
-              >
-                <el-option label="<Fixed Frame>" value="<Fixed Frame>" />
-              </el-select>
-            </div>
-            <div class="config-row">
-              <span class="config-label">Length</span>
-              <el-input-number
-                v-model="axesOptions.length"
-                size="small"
-                :min="0.1"
-                :max="10"
-                :step="0.1"
-                class="config-value"
-                @change="updateAxesOptions"
-              />
-            </div>
-            <div class="config-row">
-              <span class="config-label">Radius</span>
-              <el-input-number
-                v-model="axesOptions.radius"
-                size="small"
-                :min="0.01"
-                :max="0.5"
-                :step="0.01"
-                class="config-value"
-                @change="updateAxesOptions"
-              />
-            </div>
-            <div class="config-row">
-              <span class="config-label">Show Trail</span>
-              <el-checkbox
-                v-model="axesOptions.showTrail"
-                class="config-value"
-                @change="updateAxesOptions"
-              />
-            </div>
-            <div class="config-row">
-              <span class="config-label">Alpha</span>
-              <el-input-number
-                v-model="axesOptions.alpha"
-                size="small"
-                :min="0"
-                :max="1"
-                :step="0.1"
-                class="config-value"
-                @change="updateAxesOptions"
-              />
-            </div>
-          </div>
-        </div>
+        <!-- 动态显示组件列表 -->
+        <DisplayComponent
+          v-for="component in displayComponents"
+          :key="component.id"
+          :component="component"
+          :selected="selectedItem === component.id"
+          @select="selectItem(component.id)"
+          @toggle="handleToggleComponent"
+          @update="updateComponent"
+          @remove="removeComponent"
+        />
       </div>
     </div>
 
@@ -349,43 +102,51 @@
     <div class="display-actions">
       <div class="actions-title">Global Options</div>
       <div class="action-buttons">
-        <el-button size="small" @click="addDisplay">Add</el-button>
+        <el-button size="small" @click="showTypeSelector = true">Add</el-button>
         <el-button size="small" :disabled="!selectedItem" @click="duplicateDisplay">Duplicate</el-button>
         <el-button size="small" :disabled="!selectedItem" type="danger" @click="removeDisplay">Remove</el-button>
         <el-button size="small" :disabled="!selectedItem" @click="renameDisplay">Rename</el-button>
       </div>
     </div>
+
+    <!-- 显示类型选择器 -->
+    <DisplayTypeSelector
+      v-model="showTypeSelector"
+      @select="handleAddComponent"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import {
   Setting,
   Warning,
-  Grid,
-  Position,
-  ArrowDown,
-  ArrowRight,
-  CircleCheck
+  ArrowDown
 } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
+import DisplayComponent from './DisplayComponent.vue'
+import DisplayTypeSelector from './DisplayTypeSelector.vue'
 
 // 展开状态
 const expandedItems = reactive<Record<string, boolean>>({
   'global-options': true,
-  'global-status': true,
-  'grid': true,
-  'axes': true
+  'global-status': true
 })
 
-const expandedSubItems = reactive<Record<string, boolean>>({
-  'grid-status': true,
-  'axes-status': true,
-  'grid-offset': false
-})
+const selectedItem = ref<string>('')
 
-const selectedItem = ref<string>('grid')
+// 显示组件列表
+interface DisplayComponentData {
+  id: string
+  type: string
+  name: string
+  enabled: boolean
+  expanded: boolean
+  options: Record<string, any>
+}
+
+const displayComponents = ref<DisplayComponentData[]>([])
 
 // 配置数据
 const globalOptions = reactive({
@@ -395,38 +156,20 @@ const globalOptions = reactive({
   defaultLight: true
 })
 
-const gridOptions = reactive({
-  enabled: true,
-  referenceFrame: '<Fixed Frame>',
-  planeCellCount: 10,
-  normalCellCount: 0,
-  cellSize: 1,
-  lineStyle: 'Lines',
-  color: '#a0a0a4',
-  alpha: 0.5,
-  plane: 'XY',
-  offset: '0; 0; 0',
-  offsetX: 0,
-  offsetY: 0,
-  offsetZ: 0
-})
-
-const axesOptions = reactive({
-  enabled: true,
-  referenceFrame: '<Fixed Frame>',
-  length: 1,
-  radius: 0.1,
-  showTrail: false,
-  alpha: 1
-})
+// 显示类型选择器
+const showTypeSelector = ref(false)
 
 // 方法
 const toggleItem = (itemId: string) => {
   expandedItems[itemId] = !expandedItems[itemId]
 }
 
-const toggleSubItem = (itemId: string) => {
-  expandedSubItems[itemId] = !expandedSubItems[itemId]
+const handleToggleComponent = (componentId: string) => {
+  const component = displayComponents.value.find((c: DisplayComponentData) => c.id === componentId)
+  if (component) {
+    component.expanded = !component.expanded
+    expandedItems[componentId] = component.expanded
+  }
 }
 
 const selectItem = (itemId: string) => {
@@ -447,77 +190,212 @@ const updateGlobalOptions = () => {
   emit('update:globalOptions', { ...globalOptions })
 }
 
-const updateGridOptions = () => {
-  emit('update:gridOptions', { ...gridOptions })
+// 处理添加组件
+const handleAddComponent = (type: any) => {
+  const componentId = `${type.id}-${Date.now()}`
+  const component: DisplayComponentData = {
+    id: componentId,
+    type: type.id,
+    name: type.name,
+    enabled: true,
+    expanded: true,
+    options: getDefaultOptions(type.id)
+  }
+  displayComponents.value.push(component)
+  selectedItem.value = componentId
+  expandedItems[componentId] = true
+  
+  emit('addComponent', component)
 }
 
-const updateGridOffset = () => {
-  gridOptions.offset = `${gridOptions.offsetX}; ${gridOptions.offsetY}; ${gridOptions.offsetZ}`
-  updateGridOptions()
-}
-
-const updateAxesOptions = () => {
-  emit('update:axesOptions', { ...axesOptions })
-}
-
-const addDisplay = () => {
-  ElMessageBox.prompt('Enter display name:', 'Add Display', {
-    confirmButtonText: 'Add',
-    cancelButtonText: 'Cancel',
-    inputPattern: /.+/,
-    inputErrorMessage: 'Display name cannot be empty'
-  }).then(({ value }) => {
-    if (value) {
-      emit('addDisplay', value)
+// 获取默认配置
+const getDefaultOptions = (type: string): Record<string, any> => {
+  const defaults: Record<string, any> = {
+    grid: {
+      referenceFrame: '<Fixed Frame>',
+      planeCellCount: 10,
+      normalCellCount: 0,
+      cellSize: 1,
+      lineStyle: 'Lines',
+      color: '#a0a0a4',
+      alpha: 0.5,
+      plane: 'XY',
+      offset: '0; 0; 0',
+      offsetX: 0,
+      offsetY: 0,
+      offsetZ: 0
+    },
+    axes: {
+      referenceFrame: '<Fixed Frame>',
+      length: 1,
+      radius: 0.1,
+      showTrail: false,
+      alpha: 1
+    },
+    camera: {
+      topic: '/camera/image_raw',
+      queueSize: 2,
+      transportHint: 'raw'
+    },
+    map: {
+      topic: '/map',
+      alpha: 0.7,
+      drawBehind: false
+    },
+    path: {
+      topic: '/path',
+      color: '#ff0000',
+      bufferLength: 1
+    },
+    marker: {
+      topic: '/marker',
+      queueSize: 100
+    },
+    image: {
+      topic: '/camera/image_raw',
+      queueSize: 2,
+      transportHint: 'raw'
+    },
+    laserscan: {
+      topic: '/scan',
+      queueSize: 10
+    },
+    pointcloud2: {
+      topic: '/pointcloud',
+      queueSize: 10
     }
-  }).catch(() => {
-    // User cancelled
-  })
+  }
+  return defaults[type] || {}
+}
+
+// 更新组件配置
+const updateComponent = (componentId: string, options: Record<string, any>) => {
+  const component = displayComponents.value.find((c: DisplayComponentData) => c.id === componentId)
+  if (component) {
+    component.options = { ...component.options, ...options }
+    emit('updateComponent', component)
+  }
+}
+
+// 删除组件
+const removeComponent = (componentId: string) => {
+  const index = displayComponents.value.findIndex((c: DisplayComponentData) => c.id === componentId)
+  if (index !== -1) {
+    displayComponents.value.splice(index, 1)
+    if (selectedItem.value === componentId) {
+      selectedItem.value = ''
+    }
+    emit('removeComponent', componentId)
+  }
 }
 
 const duplicateDisplay = () => {
-  if (selectedItem.value) {
-    emit('duplicateDisplay', selectedItem.value)
+  const component = displayComponents.value.find((c: DisplayComponentData) => c.id === selectedItem.value)
+  if (component) {
+    const duplicated: DisplayComponentData = {
+      ...component,
+      id: `${component.type}-${Date.now()}`,
+      name: `${component.name} (Copy)`
+    }
+    displayComponents.value.push(duplicated)
+    selectedItem.value = duplicated.id
+    emit('duplicateComponent', duplicated)
   }
 }
 
 const removeDisplay = () => {
   if (!selectedItem.value) return
-  ElMessageBox.confirm(
-    `Are you sure you want to remove this display?`,
-    'Remove Display',
-    {
-      confirmButtonText: 'Remove',
-      cancelButtonText: 'Cancel',
-      type: 'warning'
+  const component = displayComponents.value.find((c: DisplayComponentData) => c.id === selectedItem.value)
+  if (component) {
+    ElMessageBox.confirm(
+      `Are you sure you want to remove this display?`,
+      'Remove Display',
+      {
+        confirmButtonText: 'Remove',
+        cancelButtonText: 'Cancel',
+        type: 'warning'
+      }
+    ).then(() => {
+      removeComponent(selectedItem.value)
+    }).catch(() => {
+      // User cancelled
+    })
+  }
+}
+
+const renameDisplay = () => {
+  if (!selectedItem.value) return
+  const component = displayComponents.value.find((c: DisplayComponentData) => c.id === selectedItem.value)
+  if (!component) return
+
+  ElMessageBox.prompt('Enter new name:', 'Rename Display', {
+    confirmButtonText: 'Rename',
+    cancelButtonText: 'Cancel',
+    inputValue: component.name,
+    inputPattern: /.+/,
+    inputErrorMessage: 'Display name cannot be empty'
+  }).then(({ value }) => {
+    if (value) {
+      component.name = value
+      emit('renameComponent', component.id, value)
     }
-  ).then(() => {
-    emit('removeDisplay', selectedItem.value)
   }).catch(() => {
     // User cancelled
   })
 }
 
-const renameDisplay = () => {
-  if (!selectedItem.value) return
-  ElMessageBox.prompt('Enter new name:', 'Rename Display', {
-    confirmButtonText: 'Rename',
-    cancelButtonText: 'Cancel',
-    inputPattern: /.+/,
-    inputErrorMessage: 'Display name cannot be empty'
-  }).then(({ value }) => {
-    if (value) {
-      emit('renameDisplay', selectedItem.value, value)
+// 加载保存的组件
+const loadComponents = () => {
+  const saved = localStorage.getItem('rviz-display-components')
+  if (saved) {
+    try {
+      displayComponents.value = JSON.parse(saved)
+      displayComponents.value.forEach((comp: DisplayComponentData) => {
+        expandedItems[comp.id] = comp.expanded || false
+      })
+    } catch (e) {
+      console.error('Failed to load display components:', e)
     }
-  }).catch(() => {
-    // User cancelled
-  })
+  } else {
+    // 默认添加Grid和Axes
+    handleAddComponent({ id: 'grid', name: 'Grid' })
+    handleAddComponent({ id: 'axes', name: 'Axes' })
+  }
 }
+
+// 保存组件
+const saveComponents = () => {
+  localStorage.setItem('rviz-display-components', JSON.stringify(displayComponents.value))
+}
+
+// 监听组件变化，自动保存
+watch(() => displayComponents.value, () => {
+  saveComponents()
+}, { deep: true })
+
+// 监听组件变化，自动保存展开状态
+watch(() => expandedItems, () => {
+  displayComponents.value.forEach((comp: DisplayComponentData) => {
+    if (expandedItems[comp.id] !== undefined) {
+      comp.expanded = expandedItems[comp.id] || false
+    }
+  })
+  saveComponents()
+}, { deep: true })
+
+onMounted(() => {
+  loadComponents()
+})
 
 const emit = defineEmits<{
   'update:globalOptions': [options: any]
   'update:gridOptions': [options: any]
   'update:axesOptions': [options: any]
+  addComponent: [component: DisplayComponentData]
+  updateComponent: [component: DisplayComponentData]
+  removeComponent: [componentId: string]
+  duplicateComponent: [component: DisplayComponentData]
+  renameComponent: [componentId: string, newName: string]
   addDisplay: [name: string]
   duplicateDisplay: [itemId: string]
   removeDisplay: [itemId: string]
@@ -661,49 +539,6 @@ const emit = defineEmits<{
 
 .warning-text {
   color: #e6a23c;
-}
-
-.config-value-text {
-  font-size: 12px;
-  color: #909399;
-  margin-left: auto;
-}
-
-.display-sub-item {
-  border-top: 1px solid #ebeef5;
-  margin-top: 2px;
-}
-
-.sub-item-header {
-  display: flex;
-  align-items: center;
-  padding: 4px 8px 4px 16px;
-  cursor: pointer;
-  font-size: 12px;
-  color: #606266;
-  gap: 6px;
-}
-
-.sub-item-header:hover {
-  background: #f0f2f5;
-}
-
-.sub-item-icon {
-  font-size: 14px;
-  flex-shrink: 0;
-}
-
-.success-icon {
-  color: #67c23a;
-}
-
-.sub-item-name {
-  flex: 1;
-}
-
-.sub-item-content {
-  padding-left: 32px;
-  background: #f5f7fa;
 }
 
 .display-actions {
