@@ -1,29 +1,103 @@
 <template>
-  <div class="page-container">
-    <h1>导航概览</h1>
-    <div class="content">
-      <p>这是导航概览页面，显示导航系统的整体状态和关键指标。</p>
+  <div class="navigation-overview">
+    <div class="page-header">
+      <h2>导航预览</h2>
+      <div class="header-actions">
+        <el-button size="small" @click="toggleFullscreen">
+          <el-icon><FullScreen /></el-icon>
+          {{ isFullscreen ? '退出全屏' : '全屏' }}
+        </el-button>
+      </div>
+    </div>
+    <div class="viewer-wrapper" ref="viewerWrapperRef">
+      <Rviz3DViewer />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
+import { FullScreen } from '@element-plus/icons-vue'
+import Rviz3DViewer from '@/components/Rviz3DViewer.vue'
+
+const isFullscreen = ref(false)
+const viewerWrapperRef = ref<HTMLElement>()
+
+const toggleFullscreen = () => {
+  if (!viewerWrapperRef.value) return
+
+  if (!isFullscreen.value) {
+    if (viewerWrapperRef.value.requestFullscreen) {
+      viewerWrapperRef.value.requestFullscreen()
+    } else if ((viewerWrapperRef.value as any).webkitRequestFullscreen) {
+      (viewerWrapperRef.value as any).webkitRequestFullscreen()
+    } else if ((viewerWrapperRef.value as any).mozRequestFullScreen) {
+      (viewerWrapperRef.value as any).mozRequestFullScreen()
+    } else if ((viewerWrapperRef.value as any).msRequestFullscreen) {
+      (viewerWrapperRef.value as any).msRequestFullscreen()
+    }
+    isFullscreen.value = true
+  } else {
+    if (document.exitFullscreen) {
+      document.exitFullscreen()
+    } else if ((document as any).webkitExitFullscreen) {
+      (document as any).webkitExitFullscreen()
+    } else if ((document as any).mozCancelFullScreen) {
+      (document as any).mozCancelFullScreen()
+    } else if ((document as any).msExitFullscreen) {
+      (document as any).msExitFullscreen()
+    }
+    isFullscreen.value = false
+  }
+}
+
+// 监听全屏状态变化
+document.addEventListener('fullscreenchange', () => {
+  isFullscreen.value = !!document.fullscreenElement
+})
+
+document.addEventListener('webkitfullscreenchange', () => {
+  isFullscreen.value = !!(document as any).webkitFullscreenElement
+})
+
+document.addEventListener('mozfullscreenchange', () => {
+  isFullscreen.value = !!(document as any).mozFullScreenElement
+})
+
+document.addEventListener('msfullscreenchange', () => {
+  isFullscreen.value = !!(document as any).msFullscreenElement
+})
 </script>
 
 <style scoped>
-.page-container {
-  padding: 20px;
+.navigation-overview {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #f5f7fa;
 }
 
-h1 {
-  color: #2c3e50;
-  margin-bottom: 20px;
-}
-
-.content {
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
   background: white;
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.page-header h2 {
+  margin: 0;
+  color: #303133;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.viewer-wrapper {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
 }
 </style>

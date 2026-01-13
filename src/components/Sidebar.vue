@@ -127,7 +127,7 @@ const menuItems: MenuItem[] = [
     title: '导航',
     icon: Location,
     children: [
-      { path: '/navigation/overview', title: '导航概览' },
+      { path: '/navigation/overview', title: '导航预览' },
       { path: '/navigation/route-planning', title: '路径规划' }
     ]
   },

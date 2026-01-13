@@ -15,7 +15,7 @@ const routes: RouteRecordRaw[] = [
         path: 'overview',
         name: 'NavigationOverview',
         component: () => import('../views/Navigation/Overview.vue'),
-        meta: { title: '导航概览' }
+        meta: { title: '导航预览' }
       },
       {
         path: 'route-planning',
