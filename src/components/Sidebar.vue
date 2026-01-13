@@ -144,6 +144,15 @@ const menuItems: MenuItem[] = [
     path: '/map-management'
   },
   {
+    key: 'task-management',
+    title: '任务管理',
+    icon: DocumentAdd,
+    children: [
+      { path: '/task-management/task-list', title: '任务列表' },
+      { path: '/task-management/task-create', title: '创建任务' }
+    ]
+  },
+  {
     key: 'control',
     title: '控制',
     icon: Setting,
@@ -172,15 +181,6 @@ const menuItems: MenuItem[] = [
     children: [
       { path: '/user-management/user-list', title: '用户列表' },
       { path: '/user-management/user-add', title: '添加用户' }
-    ]
-  },
-  {
-    key: 'task-management',
-    title: '任务管理',
-    icon: DocumentAdd,
-    children: [
-      { path: '/task-management/task-list', title: '任务列表' },
-      { path: '/task-management/task-create', title: '创建任务' }
     ]
   }
 ]
