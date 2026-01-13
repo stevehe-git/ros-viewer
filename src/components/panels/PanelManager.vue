@@ -46,6 +46,17 @@
         @toggle-performance-mode="$emit('togglePerformanceMode', $event)"
         @toggle-debug-info="$emit('toggleDebugInfo', $event)"
       />
+
+      <DisplayPanel
+        v-if="isPanelEnabled('display')"
+        @update:global-options="handleGlobalOptionsUpdate"
+        @update:grid-options="handleGridOptionsUpdate"
+        @update:axes-options="handleAxesOptionsUpdate"
+        @add-display="handleAddDisplay"
+        @duplicate-display="handleDuplicateDisplay"
+        @remove-display="handleRemoveDisplay"
+        @rename-display="handleRenameDisplay"
+      />
     </div>
   </div>
 </template>
@@ -55,6 +66,7 @@ import { computed } from 'vue'
 import ViewControlPanel from './ViewControlPanel.vue'
 import SceneInfoPanel from './SceneInfoPanel.vue'
 import ToolPanel from './ToolPanel.vue'
+import DisplayPanel from './DisplayPanel.vue'
 
 interface Props {
   enabledPanels: string[]
@@ -83,11 +95,39 @@ const isPanelEnabled = (panelId: string): boolean => {
   return props.enabledPanels.indexOf(panelId) !== -1
 }
 
+const handleGlobalOptionsUpdate = (options: any) => {
+  emit('update:globalOptions', options)
+}
+
+const handleGridOptionsUpdate = (options: any) => {
+  emit('update:gridOptions', options)
+}
+
+const handleAxesOptionsUpdate = (options: any) => {
+  emit('update:axesOptions', options)
+}
+
+const handleAddDisplay = (name: string) => {
+  emit('addDisplay', name)
+}
+
+const handleDuplicateDisplay = (itemId: string) => {
+  emit('duplicateDisplay', itemId)
+}
+
+const handleRemoveDisplay = (itemId: string) => {
+  emit('removeDisplay', itemId)
+}
+
+const handleRenameDisplay = (itemId: string, newName: string) => {
+  emit('renameDisplay', itemId, newName)
+}
+
 const hasActivePanels = computed(() => {
   return props.enabledPanels.length > 0
 })
 
-defineEmits<{
+const emit = defineEmits<{
   resetCamera: []
   toggleGrid: []
   toggleAxes: []
@@ -104,6 +144,13 @@ defineEmits<{
   togglePerformanceMode: [value: boolean]
   toggleDebugInfo: [value: boolean]
   toggleFullscreen: []
+  'update:globalOptions': [options: any]
+  'update:gridOptions': [options: any]
+  'update:axesOptions': [options: any]
+  addDisplay: [name: string]
+  duplicateDisplay: [itemId: string]
+  removeDisplay: [itemId: string]
+  renameDisplay: [itemId: string, newName: string]
 }>()
 </script>
 

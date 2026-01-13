@@ -39,6 +39,13 @@
       @toggle-performance-mode="togglePerformanceMode"
       @toggle-debug-info="toggleDebugInfo"
       @toggle-fullscreen="emit('toggleFullscreen')"
+      @update:global-options="handleGlobalOptionsUpdate"
+      @update:grid-options="handleGridOptionsUpdate"
+      @update:axes-options="handleAxesOptionsUpdate"
+      @add-display="handleAddDisplay"
+      @duplicate-display="handleDuplicateDisplay"
+      @remove-display="handleRemoveDisplay"
+      @rename-display="handleRenameDisplay"
     />
   </div>
 </template>
@@ -99,8 +106,8 @@ const performanceMode = ref(false)
 const showDebugInfo = ref(false)
 
 // FPS控制
-const targetFPS = 30
-const frameInterval = 1000 / targetFPS
+let targetFPS = 30
+let frameInterval = 1000 / targetFPS
 let lastRenderTime = 0
 
 // 3D对象
@@ -518,6 +525,69 @@ const togglePerformanceMode = (value: boolean) => {
 const toggleDebugInfo = (value: boolean) => {
   showDebugInfo.value = value
   // 这里可以添加调试信息的显示/隐藏
+}
+
+// 处理全局选项更新
+const handleGlobalOptionsUpdate = (options: any) => {
+  if (options.backgroundColor) {
+    backgroundColor.value = options.backgroundColor
+  }
+  if (options.frameRate !== undefined) {
+    // 可以更新FPS设置
+    targetFPS = options.frameRate
+    frameInterval = 1000 / targetFPS
+  }
+}
+
+// 处理网格选项更新
+const handleGridOptionsUpdate = (options: any) => {
+  if (options.enabled !== undefined) {
+    showGrid.value = options.enabled
+  }
+  // 可以更新网格的其他属性，如cellSize等
+  if (options.cellSize !== undefined && gridHelper) {
+    // 更新网格大小
+    scene.remove(gridHelper)
+    gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x222222)
+    scene.add(gridHelper)
+  }
+}
+
+// 处理坐标轴选项更新
+const handleAxesOptionsUpdate = (options: any) => {
+  if (options.enabled !== undefined) {
+    showAxes.value = options.enabled
+  }
+  // 可以更新坐标轴的其他属性，如length、radius等
+  if (options.length !== undefined && axesHelper) {
+    scene.remove(axesHelper)
+    axesHelper = new THREE.AxesHelper(options.length)
+    scene.add(axesHelper)
+  }
+}
+
+// 处理添加显示项
+const handleAddDisplay = (name: string) => {
+  console.log('Add display:', name)
+  // 可以在这里添加新的显示项
+}
+
+// 处理复制显示项
+const handleDuplicateDisplay = (itemId: string) => {
+  console.log('Duplicate display:', itemId)
+  // 可以在这里复制显示项
+}
+
+// 处理删除显示项
+const handleRemoveDisplay = (itemId: string) => {
+  console.log('Remove display:', itemId)
+  // 可以在这里删除显示项
+}
+
+// 处理重命名显示项
+const handleRenameDisplay = (itemId: string, newName: string) => {
+  console.log('Rename display:', itemId, 'to', newName)
+  // 可以在这里重命名显示项
 }
 
 const updateFPS = () => {

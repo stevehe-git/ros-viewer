@@ -37,7 +37,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { Setting, Monitor, InfoFilled, Tools } from '@element-plus/icons-vue'
+import { Setting, Monitor, InfoFilled, Tools, View } from '@element-plus/icons-vue'
 
 interface Panel {
   id: string
@@ -88,6 +88,12 @@ const availablePanels = ref<Panel[]>([
     title: '工具面板',
     description: '截图、导出、录制等工具',
     icon: Tools
+  },
+  {
+    id: 'display',
+    title: '显示配置',
+    description: 'Grid、Axes等显示项配置',
+    icon: View
   }
 ])
 
