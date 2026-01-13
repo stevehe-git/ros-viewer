@@ -322,25 +322,25 @@ const animate = () => {
 }
 
 // 监听器
-watch(showRobot, (val) => {
+watch(showRobot, (val: boolean) => {
   if (robotGroup) {
     robotGroup.visible = val
   }
 })
 
-watch(showMap, (val) => {
+watch(showMap, (val: boolean) => {
   if (mapMesh) {
     mapMesh.visible = val
   }
 })
 
-watch(showPath, (val) => {
+watch(showPath, (val: boolean) => {
   if (pathLine) {
     pathLine.visible = val
   }
 })
 
-watch(backgroundColor, (val) => {
+watch(backgroundColor, (val: string) => {
   if (scene) {
     scene.background = new THREE.Color(val)
   }
