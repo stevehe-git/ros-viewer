@@ -12,6 +12,7 @@
         :show-path="showPath"
         :show-laser="showLaser"
         :background-color="backgroundColor"
+        :is-fullscreen="isFullscreen"
         @reset-camera="$emit('resetCamera')"
         @toggle-grid="$emit('toggleGrid')"
         @toggle-axes="$emit('toggleAxes')"
@@ -21,6 +22,7 @@
         @update:show-path="$emit('update:showPath', $event)"
         @update:show-laser="$emit('update:showLaser', $event)"
         @update:background-color="$emit('update:backgroundColor', $event)"
+        @toggle-fullscreen="$emit('toggleFullscreen')"
       />
 
       <SceneInfoPanel
@@ -72,6 +74,7 @@ interface Props {
   isRecording: boolean
   performanceMode: boolean
   showDebugInfo: boolean
+  isFullscreen: boolean
 }
 
 const props = defineProps<Props>()
@@ -100,6 +103,7 @@ defineEmits<{
   toggleRecording: [value: boolean]
   togglePerformanceMode: [value: boolean]
   toggleDebugInfo: [value: boolean]
+  toggleFullscreen: []
 }>()
 </script>
 

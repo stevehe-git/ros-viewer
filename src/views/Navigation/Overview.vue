@@ -7,10 +7,6 @@
           <el-icon><Setting /></el-icon>
           面板设置
         </el-button>
-        <el-button size="small" @click="toggleFullscreen">
-          <el-icon><FullScreen /></el-icon>
-          {{ isFullscreen ? '退出全屏' : '全屏' }}
-        </el-button>
       </div>
     </div>
 
@@ -21,14 +17,18 @@
     />
 
     <div class="viewer-wrapper" ref="viewerWrapperRef">
-      <Rviz3DViewer :enabled-panels="enabledPanels" />
+      <Rviz3DViewer
+        :enabled-panels="enabledPanels"
+        :is-fullscreen="isFullscreen"
+        @toggle-fullscreen="toggleFullscreen"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { FullScreen, Setting } from '@element-plus/icons-vue'
+import { Setting } from '@element-plus/icons-vue'
 import Rviz3DViewer from '@/components/Rviz3DViewer.vue'
 import PanelSettingsDrawer from '@/components/panels/PanelSettingsDrawer.vue'
 

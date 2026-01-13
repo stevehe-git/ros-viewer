@@ -52,13 +52,28 @@
         />
       </div>
     </div>
+
+    <div class="control-group">
+      <el-divider />
+      <div class="control-item">
+        <el-button
+          type="primary"
+          size="small"
+          @click="$emit('toggleFullscreen')"
+          style="width: 100%"
+        >
+          <el-icon><FullScreen /></el-icon>
+          {{ props.isFullscreen ? '退出全屏' : '全屏' }}
+        </el-button>
+      </div>
+    </div>
   </BasePanel>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import BasePanel from './BasePanel.vue'
-import { Setting, Refresh, Grid, Position } from '@element-plus/icons-vue'
+import { Setting, Refresh, Grid, Position, FullScreen } from '@element-plus/icons-vue'
 
 interface Props {
   cameraMode: string
@@ -69,6 +84,7 @@ interface Props {
   showPath: boolean
   showLaser: boolean
   backgroundColor: string
+  isFullscreen: boolean
 }
 
 const props = defineProps<Props>()
@@ -99,6 +115,7 @@ defineEmits<{
   'update:showPath': [value: boolean]
   'update:showLaser': [value: boolean]
   'update:backgroundColor': [value: string]
+  toggleFullscreen: []
 }>()
 </script>
 

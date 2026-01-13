@@ -22,6 +22,7 @@
       :is-recording="isRecording"
       :performance-mode="performanceMode"
       :show-debug-info="showDebugInfo"
+      :is-fullscreen="props.isFullscreen"
       @reset-camera="resetCamera"
       @toggle-grid="toggleGrid"
       @toggle-axes="toggleAxes"
@@ -37,6 +38,7 @@
       @toggle-recording="toggleRecording"
       @toggle-performance-mode="togglePerformanceMode"
       @toggle-debug-info="toggleDebugInfo"
+      @toggle-fullscreen="emit('toggleFullscreen')"
     />
   </div>
 </template>
@@ -49,11 +51,17 @@ import PanelManager from './panels/PanelManager.vue'
 
 interface Props {
   enabledPanels?: string[]
+  isFullscreen?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  enabledPanels: () => ['view-control', 'scene-info', 'tools']
+  enabledPanels: () => ['view-control', 'scene-info', 'tools'],
+  isFullscreen: false
 })
+
+const emit = defineEmits<{
+  toggleFullscreen: []
+}>()
 
 // Refs
 const containerRef = ref<HTMLElement>()
