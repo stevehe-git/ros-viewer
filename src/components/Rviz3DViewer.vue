@@ -47,6 +47,7 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { MOUSE } from 'three'
 import PanelManager from './panels/PanelManager.vue'
 
 interface Props {
@@ -67,6 +68,10 @@ const emit = defineEmits<{
 const containerRef = ref<HTMLElement>()
 let resizeObserver: ResizeObserver | null = null
 let resizeTimer: number | null = null
+
+// 中键平移相关
+let isMiddleMouseDown = false
+let lastMousePosition = { x: 0, y: 0 }
 
 // 场景相关
 let scene: THREE.Scene
@@ -137,6 +142,17 @@ const initScene = () => {
   controls.minDistance = 2
   controls.maxDistance = 100
   controls.maxPolarAngle = Math.PI / 2
+  
+  // 配置鼠标按钮：左键旋转，中键平移
+  controls.mouseButtons = {
+    LEFT: MOUSE.ROTATE,      // 左键：旋转
+    MIDDLE: MOUSE.PAN,       // 中键：平移
+    RIGHT: MOUSE.ROTATE      // 右键：也设置为旋转（可选）
+  }
+  
+  // 启用平移功能
+  controls.enablePan = true
+  controls.panSpeed = 0.8
 
   // 创建网格
   gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x222222)
@@ -187,6 +203,9 @@ const initScene = () => {
     })
     resizeObserver.observe(containerRef.value)
   }
+
+  // 设置中键平移功能
+  setupMiddleMousePan()
 
   // 开始渲染循环
   animate()
@@ -266,6 +285,96 @@ const toggleAxes = () => {
   showAxes.value = !showAxes.value
   if (axesHelper) {
     axesHelper.visible = showAxes.value
+  }
+}
+
+// 设置中键平移功能
+const setupMiddleMousePan = () => {
+  if (!containerRef.value) return
+
+  const canvas = containerRef.value
+
+  // 中键按下
+  const onMouseDown = (event: MouseEvent) => {
+    if (event.button === 1) { // 中键
+      event.preventDefault()
+      isMiddleMouseDown = true
+      lastMousePosition.x = event.clientX
+      lastMousePosition.y = event.clientY
+      canvas.style.cursor = 'move'
+    }
+  }
+
+  // 中键移动
+  const onMouseMove = (event: MouseEvent) => {
+    if (isMiddleMouseDown && controls) {
+      event.preventDefault()
+      
+      const deltaX = event.clientX - lastMousePosition.x
+      const deltaY = event.clientY - lastMousePosition.y
+      
+      // 计算平移距离（根据屏幕尺寸和相机距离调整）
+      const panSpeed = 0.002
+      const panVector = new THREE.Vector3()
+      
+      // 计算平移方向
+      const right = new THREE.Vector3()
+      const up = new THREE.Vector3()
+      camera.getWorldDirection(new THREE.Vector3())
+      right.setFromMatrixColumn(camera.matrixWorld, 0)
+      up.setFromMatrixColumn(camera.matrixWorld, 1)
+      
+      // 应用平移
+      panVector.addScaledVector(right, -deltaX * panSpeed)
+      panVector.addScaledVector(up, deltaY * panSpeed)
+      
+      controls.target.add(panVector)
+      camera.position.add(panVector)
+      
+      lastMousePosition.x = event.clientX
+      lastMousePosition.y = event.clientY
+    }
+  }
+
+  // 中键释放
+  const onMouseUp = (event: MouseEvent) => {
+    if (event.button === 1) { // 中键
+      event.preventDefault()
+      isMiddleMouseDown = false
+      canvas.style.cursor = 'default'
+    }
+  }
+
+  // 防止中键默认行为（打开新标签页等）
+  const onContextMenu = (event: MouseEvent) => {
+    if (event.button === 1) {
+      event.preventDefault()
+    }
+  }
+
+  // 防止中键滚动
+  const onWheel = (event: WheelEvent) => {
+    if (event.button === 1) {
+      event.preventDefault()
+    }
+  }
+
+  canvas.addEventListener('mousedown', onMouseDown)
+  canvas.addEventListener('mousemove', onMouseMove)
+  canvas.addEventListener('mouseup', onMouseUp)
+  canvas.addEventListener('mouseleave', () => {
+    isMiddleMouseDown = false
+    canvas.style.cursor = 'default'
+  })
+  canvas.addEventListener('contextmenu', onContextMenu)
+
+  // 保存事件处理器以便清理
+  ;(canvas as any)._middleMouseHandlers = {
+    onMouseDown,
+    onMouseMove,
+    onMouseUp,
+    onContextMenu,
+    onWheel
   }
 }
 
@@ -515,6 +624,19 @@ onUnmounted(() => {
     resizeObserver.unobserve(containerRef.value)
     resizeObserver.disconnect()
     resizeObserver = null
+  }
+
+  // 清理中键平移事件监听器
+  if (containerRef.value) {
+    const canvas = containerRef.value
+    const handlers = (canvas as any)._middleMouseHandlers
+    if (handlers) {
+      canvas.removeEventListener('mousedown', handlers.onMouseDown)
+      canvas.removeEventListener('mousemove', handlers.onMouseMove)
+      canvas.removeEventListener('mouseup', handlers.onMouseUp)
+      canvas.removeEventListener('contextmenu', handlers.onContextMenu)
+      delete (canvas as any)._middleMouseHandlers
+    }
   }
 
   if (renderer) {
