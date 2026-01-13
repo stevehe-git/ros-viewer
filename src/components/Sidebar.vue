@@ -1,5 +1,10 @@
 <template>
-  <div class="sidebar" :class="{ collapsed: props.collapsed }">
+  <div
+    class="sidebar"
+    :class="{ collapsed: props.collapsed }"
+    @mouseenter="handleSidebarEnter"
+    @mouseleave="handleSidebarLeave"
+  >
     <div class="sidebar-header">
       <div class="sidebar-title">
         <el-icon class="title-icon">
@@ -18,6 +23,7 @@
           class="menu-parent"
           :class="{ active: isActiveParent(item), collapsed: props.collapsed }"
           @click="toggleMenu(item.key)"
+          @mouseenter="handleMenuHover(item.key, $event)"
         >
           <el-icon class="menu-icon">
             <component :is="item.icon" />
@@ -45,11 +51,20 @@
         </transition>
       </div>
     </div>
+
+    <!-- 收起状态下的hover子菜单模态框 -->
+    <HoverSubmenuModal
+      :visible="props.collapsed && isHoveringSidebar && !!hoveredMenuItem"
+      :menu-item="hoveredMenuItem || null"
+      :trigger-rect="triggerRect"
+      @mouseenter="handlePanelEnter"
+      @mouseleave="handlePanelLeave"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, h } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   Location,
@@ -58,6 +73,7 @@ import {
   User,
   Share
 } from '@element-plus/icons-vue'
+import HoverSubmenuModal from './HoverSubmenuModal.vue'
 
 interface MenuChild {
   path: string
@@ -81,6 +97,9 @@ const props = withDefaults(defineProps<Props>(), {
 
 const route = useRoute()
 const expandedMenus = ref<string[]>([])
+const hoveredMenu = ref<string | null>(null)
+const isHoveringSidebar = ref(false)
+const triggerRect = ref<DOMRect | null>(null)
 
 const menuItems: MenuItem[] = [
   {
@@ -131,6 +150,11 @@ const isActiveParent = (item: MenuItem): boolean => {
   return item.children.some(child => route.path === child.path)
 }
 
+const hoveredMenuItem = computed(() => {
+  if (!hoveredMenu.value) return null
+  return menuItems.find(item => item.key === hoveredMenu.value)
+})
+
 const toggleMenu = (key: string) => {
   const index = expandedMenus.value.indexOf(key)
   if (index > -1) {
@@ -138,6 +162,35 @@ const toggleMenu = (key: string) => {
   } else {
     expandedMenus.value.push(key)
   }
+}
+
+const handleMenuHover = (key: string, event?: MouseEvent) => {
+  hoveredMenu.value = key
+  if (event && event.target) {
+    const target = event.target as HTMLElement
+    const parentElement = target.closest('.menu-parent') as HTMLElement
+    if (parentElement) {
+      triggerRect.value = parentElement.getBoundingClientRect()
+    }
+  }
+}
+
+const handleSidebarEnter = () => {
+  isHoveringSidebar.value = true
+}
+
+const handleSidebarLeave = () => {
+  isHoveringSidebar.value = false
+  hoveredMenu.value = null
+}
+
+const handlePanelEnter = () => {
+  isHoveringSidebar.value = true
+}
+
+const handlePanelLeave = () => {
+  isHoveringSidebar.value = false
+  hoveredMenu.value = null
 }
 
 onMounted(() => {
@@ -284,4 +337,5 @@ onMounted(() => {
   max-height: 0;
   overflow: hidden;
 }
+
 </style>
