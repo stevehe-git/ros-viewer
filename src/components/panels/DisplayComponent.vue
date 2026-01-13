@@ -4,7 +4,7 @@
     :class="{ active: selected }"
     @click="$emit('select', component.id)"
   >
-    <div class="display-item-header" @click.stop="$emit('toggle', component.id)">
+    <div class="display-item-header">
       <el-icon class="item-icon">
         <component :is="getComponentIcon(component.type)" />
       </el-icon>
@@ -14,7 +14,11 @@
         @click.stop
       />
       <span class="item-name">{{ component.name }}</span>
-      <el-icon class="expand-icon" :class="{ expanded: component.expanded }">
+      <el-icon 
+        class="expand-icon" 
+        :class="{ expanded: component.expanded }"
+        @click.stop="$emit('toggle', component.id)"
+      >
         <ArrowDown />
       </el-icon>
     </div>
@@ -52,7 +56,6 @@ import {
   Grid,
   Position,
   Camera,
-  Map,
   Connection,
   Location,
   Picture,
@@ -141,7 +144,7 @@ const handleOptionsUpdate = (options: Record<string, any>) => {
   emit('update', props.component.id, options)
 }
 
-defineEmits<{
+const emit = defineEmits<{
   select: [id: string]
   toggle: [id: string]
   update: [id: string, options: Record<string, any>]

@@ -8,12 +8,16 @@
       <div class="display-list">
         <!-- Global Options -->
         <div class="display-item">
-          <div class="display-item-header" @click="toggleItem('global-options')">
+          <div class="display-item-header">
             <el-icon class="item-icon">
               <Setting />
             </el-icon>
             <span class="item-name">Global Options</span>
-            <el-icon class="expand-icon" :class="{ expanded: expandedItems['global-options'] }">
+            <el-icon 
+              class="expand-icon" 
+              :class="{ expanded: expandedItems['global-options'] }"
+              @click.stop="toggleItem('global-options')"
+            >
               <ArrowDown />
             </el-icon>
           </div>
@@ -62,12 +66,16 @@
 
         <!-- Global Status -->
         <div class="display-item">
-          <div class="display-item-header" @click="toggleItem('global-status')">
+          <div class="display-item-header">
             <el-icon class="item-icon warning-icon">
               <Warning />
             </el-icon>
             <span class="item-name">Global Status</span>
-            <el-icon class="expand-icon" :class="{ expanded: expandedItems['global-status'] }">
+            <el-icon 
+              class="expand-icon" 
+              :class="{ expanded: expandedItems['global-status'] }"
+              @click.stop="toggleItem('global-status')"
+            >
               <ArrowDown />
             </el-icon>
           </div>
@@ -481,6 +489,14 @@ const emit = defineEmits<{
   color: #909399;
   transition: transform 0.2s;
   flex-shrink: 0;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.expand-icon:hover {
+  color: #409eff;
+  background: #ecf5ff;
+  border-radius: 2px;
 }
 
 .expand-icon.expanded {
