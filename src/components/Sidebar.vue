@@ -6,7 +6,6 @@
           <Share />
         </el-icon>
         <span v-if="!props.collapsed" class="title-text">RosViewer</span>
-        <span v-else class="title-text-collapsed">RV</span>
       </div>
     </div>
     <div class="sidebar-menu">
