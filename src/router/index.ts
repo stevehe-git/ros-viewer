@@ -1,171 +1,140 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import type { RouteRecordRaw } from 'vue-router'
 
-/**
- * 路由配置
- * 支持导航、控制、数据包分析等功能页面
- */
-const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
-  routes: [
-    {
-      path: '/',
-      redirect: '/dashboard'
-    },
-    {
-      path: '/dashboard',
-      name: 'dashboard',
-      component: () => import('../views/DashboardView.vue'),
-      meta: {
-        title: '仪表板',
-        icon: 'dashboard',
-        requiresAuth: false
+const routes: RouteRecordRaw[] = [
+  {
+    path: '/',
+    redirect: '/navigation/overview'
+  },
+  {
+    path: '/navigation',
+    name: 'Navigation',
+    component: () => import('../views/Navigation/index.vue'),
+    children: [
+      {
+        path: 'overview',
+        name: 'NavigationOverview',
+        component: () => import('../views/Navigation/Overview.vue'),
+        meta: { title: '导航概览' }
+      },
+      {
+        path: 'route-planning',
+        name: 'RoutePlanning',
+        component: () => import('../views/Navigation/RoutePlanning.vue'),
+        meta: { title: '路径规划' }
+      },
+      {
+        path: 'waypoints',
+        name: 'Waypoints',
+        component: () => import('../views/Navigation/Waypoints.vue'),
+        meta: { title: '航点管理' }
+      },
+      {
+        path: 'map-management',
+        name: 'MapManagement',
+        component: () => import('../views/Navigation/MapManagement.vue'),
+        meta: { title: '地图管理' }
       }
-    },
-    {
-      path: '/navigation',
-      name: 'navigation',
-      component: () => import('../views/navigation/NavigationView.vue'),
-      meta: {
-        title: '导航',
-        icon: 'navigation',
-        requiresAuth: false
+    ]
+  },
+  {
+    path: '/control',
+    name: 'Control',
+    component: () => import('../views/Control/index.vue'),
+    children: [
+      {
+        path: 'device-control',
+        name: 'DeviceControl',
+        component: () => import('../views/Control/DeviceControl.vue'),
+        meta: { title: '设备控制' }
       },
-      children: [
-        {
-          path: '',
-          redirect: '/navigation/rviz'
-        },
-        {
-          path: 'rviz',
-          name: 'navigation-rviz',
-          component: () => import('../views/navigation/RVizView.vue'),
-          meta: {
-            title: 'RViz 可视化',
-            icon: 'rviz',
-            requiresAuth: false
-          }
-        },
-        {
-          path: 'move_base',
-          name: 'navigation-movebase',
-          component: () => import('../views/navigation/MoveBaseView.vue'),
-          meta: {
-            title: 'Move Base',
-            icon: 'movebase',
-            requiresAuth: false
-          }
-        }
-      ]
-    },
-    {
-      path: '/control',
-      name: 'control',
-      component: () => import('../views/control/ControlView.vue'),
-      meta: {
-        title: '控制',
-        icon: 'control',
-        requiresAuth: false
+      {
+        path: 'remote-control',
+        name: 'RemoteControl',
+        component: () => import('../views/Control/RemoteControl.vue'),
+        meta: { title: '远程控制' }
       },
-      children: [
-        {
-          path: '',
-          redirect: '/control/task'
-        },
-        {
-          path: 'task',
-          name: 'control-task',
-          component: () => import('../views/control/TaskControlView.vue'),
-          meta: {
-            title: '任务控制',
-            icon: 'task',
-            requiresAuth: false
-          }
-        },
-        {
-          path: 'teleop',
-          name: 'control-teleop',
-          component: () => import('../views/control/TeleopControlView.vue'),
-          meta: {
-            title: '遥控控制',
-            icon: 'teleop',
-            requiresAuth: false
-          }
-        },
-        {
-          path: 'simulation',
-          name: 'control-simulation',
-          component: () => import('../views/control/SimulationControlView.vue'),
-          meta: {
-            title: '仿真控制',
-            icon: 'simulation',
-            requiresAuth: false
-          }
-        }
-      ]
-    },
-    {
-      path: '/analysis',
-      name: 'analysis',
-      component: () => import('../views/analysis/AnalysisView.vue'),
-      meta: {
-        title: '分析',
-        icon: 'analysis',
-        requiresAuth: false
+      {
+        path: 'command-history',
+        name: 'CommandHistory',
+        component: () => import('../views/Control/CommandHistory.vue'),
+        meta: { title: '指令历史' }
       },
-      children: [
-        {
-          path: '',
-          redirect: '/analysis/bag'
-        },
-        {
-          path: 'bag',
-          name: 'analysis-bag',
-          component: () => import('../views/analysis/BagAnalysisView.vue'),
-          meta: {
-            title: 'Bag 分析',
-            icon: 'bag',
-            requiresAuth: false
-          }
-        },
-        {
-          path: 'logs',
-          name: 'analysis-logs',
-          component: () => import('../views/analysis/LogAnalysisView.vue'),
-          meta: {
-            title: '日志分析',
-            icon: 'logs',
-            requiresAuth: false
-          }
-        }
-      ]
-    },
-    {
-      path: '/:pathMatch(.*)*',
-      name: 'not-found',
-      component: () => import('../views/NotFoundView.vue'),
-      meta: {
-        title: '页面未找到',
-        requiresAuth: false
+      {
+        path: 'status-monitoring',
+        name: 'StatusMonitoring',
+        component: () => import('../views/Control/StatusMonitoring.vue'),
+        meta: { title: '状态监控' }
       }
-    }
-  ]
-})
-
-// 路由守卫
-router.beforeEach((to, _from, next) => {
-  // 设置页面标题
-  if (to.meta?.title) {
-    document.title = `${to.meta.title} - 机器人可视化平台`
+    ]
+  },
+  {
+    path: '/analysis',
+    name: 'Analysis',
+    component: () => import('../views/Analysis/index.vue'),
+    children: [
+      {
+        path: 'data-analysis',
+        name: 'DataAnalysis',
+        component: () => import('../views/Analysis/DataAnalysis.vue'),
+        meta: { title: '数据分析' }
+      },
+      {
+        path: 'performance-report',
+        name: 'PerformanceReport',
+        component: () => import('../views/Analysis/PerformanceReport.vue'),
+        meta: { title: '性能报告' }
+      },
+      {
+        path: 'statistics',
+        name: 'Statistics',
+        component: () => import('../views/Analysis/Statistics.vue'),
+        meta: { title: '统计信息' }
+      },
+      {
+        path: 'trend-analysis',
+        name: 'TrendAnalysis',
+        component: () => import('../views/Analysis/TrendAnalysis.vue'),
+        meta: { title: '趋势分析' }
+      }
+    ]
+  },
+  {
+    path: '/user-management',
+    name: 'UserManagement',
+    component: () => import('../views/UserManagement/index.vue'),
+    children: [
+      {
+        path: 'user-list',
+        name: 'UserList',
+        component: () => import('../views/UserManagement/UserList.vue'),
+        meta: { title: '用户列表' }
+      },
+      {
+        path: 'user-add',
+        name: 'UserAdd',
+        component: () => import('../views/UserManagement/UserAdd.vue'),
+        meta: { title: '添加用户' }
+      },
+      {
+        path: 'user-edit/:id',
+        name: 'UserEdit',
+        component: () => import('../views/UserManagement/UserEdit.vue'),
+        meta: { title: '编辑用户' }
+      },
+      {
+        path: 'user-permissions/:id',
+        name: 'UserPermissions',
+        component: () => import('../views/UserManagement/UserPermissions.vue'),
+        meta: { title: '用户权限' }
+      }
+    ]
   }
+]
 
-  // 这里可以添加认证检查等逻辑
-  next()
-})
-
-// 路由后置守卫
-router.afterEach((_to, _from) => {
-  // 更新UI状态中的当前视图
-  // TODO: 导入 uiStore
+const router = createRouter({
+  history: createWebHistory(),
+  routes
 })
 
 export default router
