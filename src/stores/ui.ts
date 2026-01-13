@@ -123,6 +123,14 @@ function navigateForward() {
     panels.value.set(panelId, visible)
   }
 
+  function showPanel(panelId: string) {
+    panels.value.set(panelId, true)
+  }
+
+  function hidePanel(panelId: string) {
+    panels.value.set(panelId, false)
+  }
+
   function showModal(modalId: string) {
     modals.value.set(modalId, true)
   }
@@ -214,6 +222,8 @@ function navigateForward() {
     setLayerVisibility,
     togglePanel,
     setPanelVisibility,
+    showPanel,
+    hidePanel,
     showModal,
     hideModal,
     toggleModal,

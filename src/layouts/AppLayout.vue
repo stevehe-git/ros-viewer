@@ -18,18 +18,55 @@
 
       <!-- 导航菜单 -->
       <nav class="sidebar-nav">
-        <router-link
-          v-for="route in navigationRoutes"
-          :key="route.name"
-          :to="route.path"
-          class="nav-item"
-          active-class="active"
-        >
-          <i :class="`icon-${route.meta?.icon || 'default'}`"></i>
-          <span v-if="!uiStore.uiState.sidebarCollapsed" class="nav-text">
-            {{ route.meta?.title || route.name }}
-          </span>
-        </router-link>
+        <!-- 主导航项 -->
+        <template v-for="route in mainNavigationRoutes" :key="route.name">
+          <div v-if="!route.children || route.children.length === 0" class="nav-item-wrapper">
+            <router-link
+              :to="route.path"
+              class="nav-item"
+              active-class="active"
+            >
+              <i :class="`icon-${route.meta?.icon || 'default'}`"></i>
+              <span v-if="!uiStore.uiState.sidebarCollapsed" class="nav-text">
+                {{ route.meta?.title || route.name }}
+              </span>
+            </router-link>
+          </div>
+
+          <!-- 带子菜单的主导航项 -->
+          <div v-else class="nav-group">
+            <div
+              class="nav-item nav-group-header"
+              :class="{ expanded: expandedGroups.includes(route.name as string) }"
+              @click="toggleGroup(route.name as string)"
+            >
+              <i :class="`icon-${route.meta?.icon || 'default'}`"></i>
+              <span v-if="!uiStore.uiState.sidebarCollapsed" class="nav-text">
+                {{ route.meta?.title || route.name }}
+              </span>
+              <i v-if="!uiStore.uiState.sidebarCollapsed" class="nav-arrow icon-chevron-down"></i>
+            </div>
+
+            <!-- 子导航项 -->
+            <div
+              v-if="!uiStore.uiState.sidebarCollapsed && expandedGroups.includes(route.name as string)"
+              class="nav-submenu"
+            >
+              <router-link
+                v-for="childRoute in route.children"
+                :key="childRoute.name"
+                :to="childRoute.path"
+                class="nav-item nav-submenu-item"
+                active-class="active"
+              >
+                <i :class="`icon-${childRoute.meta?.icon || 'default'}`"></i>
+                <span class="nav-text">
+                  {{ childRoute.meta?.title || childRoute.name }}
+                </span>
+              </router-link>
+            </div>
+          </div>
+        </template>
       </nav>
 
       <!-- 底部操作区 -->
@@ -122,45 +159,11 @@
       </div>
     </main>
 
-    <!-- 右侧面板区域 -->
-    <aside class="right-panels" v-if="!uiStore.uiState.sidebarCollapsed">
-      <!-- 状态面板 -->
-      <div class="panel status-panel" v-if="uiStore.panels.get('status-panel')">
-        <div class="panel-header">
-          <h3>系统状态</h3>
-          <button @click="uiStore.togglePanel('status-panel')" class="panel-close">
-            <i class="icon-close"></i>
-          </button>
-        </div>
-        <div class="panel-content">
-          <StatusPanel />
-        </div>
-      </div>
-
-      <!-- 控制面板 -->
-      <div class="panel control-panel" v-if="uiStore.panels.get('control-panel')">
-        <div class="panel-header">
-          <h3>控制面板</h3>
-          <button @click="uiStore.togglePanel('control-panel')" class="panel-close">
-            <i class="icon-close"></i>
-          </button>
-        </div>
-        <div class="panel-content">
-          <ControlPanel />
-        </div>
-      </div>
-
-      <!-- 传感器面板 -->
-      <div class="panel sensor-panel" v-if="uiStore.panels.get('sensor-panel')">
-        <div class="panel-header">
-          <h3>传感器数据</h3>
-          <button @click="uiStore.togglePanel('sensor-panel')" class="panel-close">
-            <i class="icon-close"></i>
-          </button>
-        </div>
-        <div class="panel-content">
-          <SensorPanel />
-        </div>
+      <!-- 右侧面板区域 -->
+    <aside class="right-panels" v-if="hasVisiblePanels && !uiStore.uiState.sidebarCollapsed">
+      <!-- 虚拟侧边栏 - 机器人状态信息 -->
+      <div class="panel robot-sidebar-panel">
+        <RobotSidebar />
       </div>
     </aside>
 
@@ -173,14 +176,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUIStore } from '../stores/ui'
 import { useRobotStore } from '../stores/robot'
 import { protocolManager } from '../core/protocols/ProtocolManager'
-import StatusPanel from '../components/StatusPanel.vue'
-import ControlPanel from '../components/ControlPanel.vue'
-import SensorPanel from '../components/SensorPanel.vue'
+import RobotSidebar from '../components/RobotSidebar.vue'
 import SettingsModal from '../components/SettingsModal.vue'
 
 // 路由和状态管理
@@ -189,13 +190,28 @@ const router = useRouter()
 const uiStore = useUIStore()
 const robotStore = useRobotStore()
 
+// 导航状态
+const expandedGroups = ref<string[]>(['navigation', 'control', 'analysis'])
+
 // 计算属性
 const currentRoute = computed(() => route)
 
-const navigationRoutes = computed(() => {
-  return router.getRoutes().filter(route =>
-    route.meta && !route.path.includes('*')
+const mainNavigationRoutes = computed(() => {
+  const routes = router.getRoutes().filter(route =>
+    route.meta &&
+    !route.path.includes('*') &&
+    !route.path.includes('/:pathMatch') &&
+    route.name !== 'dashboard' &&
+    !route.path.includes('/') // 只获取顶级路由（路径不包含斜杠）
   )
+
+  return routes.map(route => ({
+    ...route,
+    children: router.getRoutes().filter(childRoute =>
+      childRoute.path.startsWith(route.path + '/') &&
+      childRoute.path.split('/').length === route.path.split('/').length + 1
+    )
+  }))
 })
 
 const breadcrumb = computed(() => {
@@ -212,6 +228,11 @@ const breadcrumb = computed(() => {
 
 const hasActiveConnections = computed(() => {
   return protocolManager.getAllActiveProtocols().size > 0
+})
+
+const hasVisiblePanels = computed(() => {
+  // 虚拟侧边栏始终可见（如果侧边栏没有折叠）
+  return !uiStore.uiState.sidebarCollapsed
 })
 
 // 方法
@@ -242,6 +263,15 @@ function getThemeText(theme: string): string {
   }
   return themeMap[theme] || theme
 }
+
+function toggleGroup(groupName: string): void {
+  const index = expandedGroups.value.indexOf(groupName)
+  if (index > -1) {
+    expandedGroups.value.splice(index, 1)
+  } else {
+    expandedGroups.value.push(groupName)
+  }
+}
 </script>
 
 <style scoped>
@@ -264,6 +294,9 @@ function getThemeText(theme: string): string {
   border-right: 1px solid var(--border-color);
   transition: width 0.3s ease;
   z-index: 100;
+  position: sticky;
+  top: 0;
+  height: 100vh;
 }
 
 .sidebar.collapsed {
@@ -317,6 +350,14 @@ function getThemeText(theme: string): string {
   overflow-y: auto;
 }
 
+.nav-item-wrapper {
+  margin-bottom: 4px;
+}
+
+.nav-group {
+  margin-bottom: 8px;
+}
+
 .nav-item {
   display: flex;
   align-items: center;
@@ -340,6 +381,56 @@ function getThemeText(theme: string): string {
   color: white;
 }
 
+.nav-group-header {
+  position: relative;
+}
+
+.nav-group-header.expanded {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.nav-arrow {
+  margin-left: auto;
+  transition: transform 0.2s ease;
+  font-size: 12px;
+}
+
+.nav-group-header.expanded .nav-arrow {
+  transform: rotate(180deg);
+}
+
+.nav-submenu {
+  margin-left: 16px;
+  border-left: 2px solid rgba(255, 255, 255, 0.1);
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
+}
+
+.nav-submenu-item {
+  padding: 8px 16px;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.nav-submenu-item:hover {
+  opacity: 1;
+}
+
+.nav-submenu-item.active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.15);
+}
+
 .nav-item i {
   font-size: 18px;
   width: 18px;
@@ -349,11 +440,20 @@ function getThemeText(theme: string): string {
 
 .nav-text {
   transition: opacity 0.3s ease;
+  flex: 1;
 }
 
 .sidebar.collapsed .nav-text {
   opacity: 0;
   pointer-events: none;
+}
+
+.sidebar.collapsed .nav-submenu {
+  display: none;
+}
+
+.sidebar.collapsed .nav-arrow {
+  display: none;
 }
 
 /* 侧边栏底部 */
@@ -388,6 +488,7 @@ function getThemeText(theme: string): string {
   display: flex;
   flex-direction: column;
   min-width: 0; /* 防止 flex 子项溢出 */
+  overflow: hidden;
 }
 
 /* 顶部工具栏 */
@@ -559,12 +660,15 @@ function getThemeText(theme: string): string {
 
 /* 右侧面板 */
 .right-panels {
-  width: 300px;
+  width: 280px;
+  min-width: 280px;
+  max-width: 320px;
   background: var(--bg-color);
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  flex-shrink: 0;
 }
 
 .panel {
@@ -573,6 +677,12 @@ function getThemeText(theme: string): string {
   border-radius: 8px;
   box-shadow: 0 2px 8px var(--shadow-color);
   overflow: hidden;
+}
+
+.robot-sidebar-panel {
+  margin: 0;
+  height: 100%;
+  box-shadow: none;
 }
 
 .panel:first-child {
@@ -644,29 +754,42 @@ function getThemeText(theme: string): string {
 
   .right-panels {
     width: 250px;
+    min-width: 250px;
+    max-width: 300px;
   }
 }
 
 @media (max-width: 768px) {
-  .sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 100vh;
-    z-index: 1000;
-    transform: translateX(-100%);
+  .app-layout {
+    flex-direction: column;
   }
 
-  .sidebar:not(.collapsed) {
-    transform: translateX(0);
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: relative;
+    transform: none;
+  }
+
+  .sidebar.collapsed {
+    width: 100%;
   }
 
   .main-content {
-    width: 100vw;
+    width: 100%;
+    order: 2;
   }
 
   .right-panels {
-    display: none;
+    width: 100%;
+    order: 3;
+    max-height: 40vh;
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .page-content {
+    min-height: calc(100vh - 110px);
   }
 
   .toolbar-center {
