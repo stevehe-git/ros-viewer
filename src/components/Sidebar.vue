@@ -135,13 +135,19 @@ const menuItems: MenuItem[] = [
     key: 'waypoints',
     title: '航点管理',
     icon: Aim,
-    path: '/waypoints'
+    children: [
+      { path: '/waypoints/list', title: '航点列表' },
+      { path: '/waypoints/create', title: '创建航点' }
+    ]
   },
   {
     key: 'map-management',
     title: '地图管理',
     icon: MapLocation,
-    path: '/map-management'
+    children: [
+      { path: '/map-management/list', title: '地图列表' },
+      { path: '/map-management/create', title: '创建地图' }
+    ]
   },
   {
     key: 'task-management',
@@ -190,7 +196,7 @@ const isActiveParent = (item: MenuItem): boolean => {
     // 顶级菜单项（航点管理、地图管理、任务管理等）
     return route.path === item.path
   } else if (item.children) {
-    // 有子项的菜单（导航、控制、分析、用户管理）
+    // 有子项的菜单（导航、控制、分析、用户管理、航点管理、地图管理）
     if (props.collapsed) {
       // 收起状态：显示父级路由激活状态
       return item.children.some(child => route.path === child.path)

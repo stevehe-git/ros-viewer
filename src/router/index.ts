@@ -28,14 +28,58 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/waypoints',
     name: 'Waypoints',
-    component: () => import('../views/Navigation/Waypoints.vue'),
-    meta: { title: '航点管理' }
+    component: () => import('../views/Waypoints/index.vue'),
+    children: [
+      {
+        path: 'list',
+        name: 'WaypointList',
+        component: () => import('../views/Waypoints/WaypointList.vue'),
+        meta: { title: '航点列表' }
+      },
+      {
+        path: 'create',
+        name: 'WaypointCreate',
+        component: () => import('../views/Waypoints/WaypointCreate.vue'),
+        meta: { title: '创建航点' }
+      },
+      {
+        path: 'edit/:id',
+        name: 'WaypointEdit',
+        component: () => import('../views/Waypoints/WaypointCreate.vue'),
+        meta: { title: '编辑航点' }
+      }
+    ]
   },
   {
     path: '/map-management',
     name: 'MapManagement',
-    component: () => import('../views/Navigation/MapManagement.vue'),
-    meta: { title: '地图管理' }
+    component: () => import('../views/MapManagement/index.vue'),
+    children: [
+      {
+        path: 'list',
+        name: 'MapList',
+        component: () => import('../views/MapManagement/MapList.vue'),
+        meta: { title: '地图列表' }
+      },
+      {
+        path: 'create',
+        name: 'MapCreate',
+        component: () => import('../views/MapManagement/MapCreate.vue'),
+        meta: { title: '创建地图' }
+      },
+      {
+        path: 'view/:id',
+        name: 'MapView',
+        component: () => import('../views/MapManagement/MapList.vue'),
+        meta: { title: '查看地图' }
+      },
+      {
+        path: 'edit/:id',
+        name: 'MapEdit',
+        component: () => import('../views/MapManagement/MapCreate.vue'),
+        meta: { title: '编辑地图' }
+      }
+    ]
   },
   {
     path: '/control',
