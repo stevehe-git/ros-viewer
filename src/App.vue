@@ -31,7 +31,7 @@ const toggleSidebar = () => {
 
 .main-content {
   flex: 1;
-  margin-left: 240px;
+  margin-left: 180px;
   display: flex;
   flex-direction: column;
   transition: margin-left 0.3s ease;
@@ -44,7 +44,7 @@ const toggleSidebar = () => {
 .content-wrapper {
   margin-top: 60px;
   flex: 1;
-  padding: 20px;
+  padding: 0px;
   overflow-y: auto;
   min-height: calc(100vh - 60px);
 }

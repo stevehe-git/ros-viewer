@@ -1,85 +1,42 @@
 <template>
   <div class="rviz-viewer">
     <div class="viewer-container" ref="containerRef"></div>
-    
-    <!-- 控制面板 -->
-    <div class="control-panel">
-      <el-card class="control-card">
-        <template #header>
-          <div class="card-header">
-            <span>视图控制</span>
-          </div>
-        </template>
-        
-        <div class="control-group">
-          <el-button-group>
-            <el-button size="small" @click="resetCamera">
-              <el-icon><Refresh /></el-icon>
-              重置视角
-            </el-button>
-            <el-button size="small" @click="toggleGrid">
-              <el-icon><Grid /></el-icon>
-              {{ showGrid ? '隐藏网格' : '显示网格' }}
-            </el-button>
-            <el-button size="small" @click="toggleAxes">
-              <el-icon><Position /></el-icon>
-              {{ showAxes ? '隐藏坐标轴' : '显示坐标轴' }}
-            </el-button>
-          </el-button-group>
-        </div>
 
-        <div class="control-group">
-          <el-divider />
-          <div class="control-item">
-            <span>相机模式:</span>
-            <el-radio-group v-model="cameraMode" size="small">
-              <el-radio-button label="orbit">轨道</el-radio-button>
-              <el-radio-button label="firstPerson">第一人称</el-radio-button>
-            </el-radio-group>
-          </div>
-        </div>
-
-        <div class="control-group">
-          <el-divider />
-          <div class="control-item">
-            <span>显示选项:</span>
-            <el-checkbox v-model="showRobot">机器人模型</el-checkbox>
-            <el-checkbox v-model="showMap">地图</el-checkbox>
-            <el-checkbox v-model="showPath">路径</el-checkbox>
-            <el-checkbox v-model="showLaser">激光扫描</el-checkbox>
-          </div>
-        </div>
-
-        <div class="control-group">
-          <el-divider />
-          <div class="control-item">
-            <span>背景颜色:</span>
-            <el-color-picker v-model="backgroundColor" size="small" />
-          </div>
-        </div>
-      </el-card>
-
-      <el-card class="info-card">
-        <template #header>
-          <div class="card-header">
-            <span>场景信息</span>
-          </div>
-        </template>
-        
-        <div class="info-item">
-          <span>FPS:</span>
-          <span>{{ fps }}</span>
-        </div>
-        <div class="info-item">
-          <span>相机位置:</span>
-          <span>X: {{ cameraPos.x.toFixed(2) }}, Y: {{ cameraPos.y.toFixed(2) }}, Z: {{ cameraPos.z.toFixed(2) }}</span>
-        </div>
-        <div class="info-item">
-          <span>渲染对象:</span>
-          <span>{{ objectCount }}</span>
-        </div>
-      </el-card>
-    </div>
+    <!-- 面板管理系统 -->
+    <PanelManager
+      :enabled-panels="enabledPanels"
+      :camera-mode="cameraMode"
+      :show-grid="showGrid"
+      :show-axes="showAxes"
+      :show-robot="showRobot"
+      :show-map="showMap"
+      :show-path="showPath"
+      :show-laser="showLaser"
+      :background-color="backgroundColor"
+      :fps="fps"
+      :camera-pos="cameraPos"
+      :object-count="objectCount"
+      :memory-usage="memoryUsage"
+      :texture-count="textureCount"
+      :is-recording="isRecording"
+      :performance-mode="performanceMode"
+      :show-debug-info="showDebugInfo"
+      @reset-camera="resetCamera"
+      @toggle-grid="toggleGrid"
+      @toggle-axes="toggleAxes"
+      @update:camera-mode="handleCameraModeUpdate"
+      @update:show-robot="handleShowRobotUpdate"
+      @update:show-map="handleShowMapUpdate"
+      @update:show-path="handleShowPathUpdate"
+      @update:show-laser="handleShowLaserUpdate"
+      @update:background-color="handleBackgroundColorUpdate"
+      @take-screenshot="takeScreenshot"
+      @export-scene="exportScene"
+      @reset-scene="resetScene"
+      @toggle-recording="toggleRecording"
+      @toggle-performance-mode="togglePerformanceMode"
+      @toggle-debug-info="toggleDebugInfo"
+    />
   </div>
 </template>
 
@@ -87,7 +44,15 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { Refresh, Grid, Position } from '@element-plus/icons-vue'
+import PanelManager from './panels/PanelManager.vue'
+
+interface Props {
+  enabledPanels?: string[]
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  enabledPanels: () => ['view-control', 'scene-info', 'tools']
+})
 
 // Refs
 const containerRef = ref<HTMLElement>()
@@ -111,6 +76,11 @@ const backgroundColor = ref('#1a1a1a')
 const fps = ref(60)
 const cameraPos = ref({ x: 0, y: 0, z: 0 })
 const objectCount = ref(0)
+const memoryUsage = ref(0)
+const textureCount = ref(0)
+const isRecording = ref(false)
+const performanceMode = ref(false)
+const showDebugInfo = ref(false)
 
 // 3D对象
 let gridHelper: THREE.GridHelper
@@ -281,6 +251,119 @@ const updateObjectCount = () => {
   objectCount.value = count
 }
 
+const updateMemoryUsage = () => {
+  if (renderer && renderer.info) {
+    // Three.js的内存信息 (MB)
+    const memoryInfo = renderer.info.memory
+    memoryUsage.value = Math.round((memoryInfo.geometries + memoryInfo.textures) * 0.001)
+  }
+}
+
+const updateTextureCount = () => {
+  let count = 0
+  scene.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.material) {
+      if (Array.isArray(child.material)) {
+        count += child.material.length
+      } else {
+        count += 1
+      }
+    }
+  })
+  textureCount.value = count
+}
+
+// 处理面板事件
+const handleCameraModeUpdate = (value: string) => {
+  cameraMode.value = value
+}
+
+const handleShowRobotUpdate = (value: boolean) => {
+  showRobot.value = value
+}
+
+const handleShowMapUpdate = (value: boolean) => {
+  showMap.value = value
+}
+
+const handleShowPathUpdate = (value: boolean) => {
+  showPath.value = value
+}
+
+const handleShowLaserUpdate = (value: boolean) => {
+  showLaser.value = value
+}
+
+const handleBackgroundColorUpdate = (value: string) => {
+  backgroundColor.value = value
+}
+
+// 工具面板处理函数
+const takeScreenshot = () => {
+  if (renderer && containerRef.value) {
+    const canvas = renderer.domElement
+    const link = document.createElement('a')
+    link.download = `rviz-screenshot-${new Date().getTime()}.png`
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+  }
+}
+
+const exportScene = () => {
+  // 导出场景数据的功能
+  const sceneData = {
+    camera: {
+      position: camera.position,
+      target: controls.target
+    },
+    objects: {
+      showRobot: showRobot.value,
+      showMap: showMap.value,
+      showPath: showPath.value,
+      showLaser: showLaser.value
+    },
+    display: {
+      showGrid: showGrid.value,
+      showAxes: showAxes.value,
+      backgroundColor: backgroundColor.value
+    }
+  }
+
+  const blob = new Blob([JSON.stringify(sceneData, null, 2)], { type: 'application/json' })
+  const link = document.createElement('a')
+  link.download = `rviz-scene-${new Date().getTime()}.json`
+  link.href = URL.createObjectURL(blob)
+  link.click()
+}
+
+const resetScene = () => {
+  // 重置所有场景设置
+  showRobot.value = true
+  showMap.value = true
+  showPath.value = false
+  showLaser.value = false
+  showGrid.value = true
+  showAxes.value = true
+  backgroundColor.value = '#1a1a1a'
+  cameraMode.value = 'orbit'
+  resetCamera()
+}
+
+const toggleRecording = (value: boolean) => {
+  isRecording.value = value
+  // 这里可以添加录制功能的实现
+}
+
+const togglePerformanceMode = (value: boolean) => {
+  performanceMode.value = value
+  // 这里可以添加性能模式的实现
+}
+
+const toggleDebugInfo = (value: boolean) => {
+  showDebugInfo.value = value
+  // 这里可以添加调试信息的显示/隐藏
+}
+
 const updateFPS = () => {
   frameCount++
   const currentTime = performance.now()
@@ -319,6 +402,8 @@ const animate = () => {
   updateFPS()
   updateCameraPos()
   updateObjectCount()
+  updateMemoryUsage()
+  updateTextureCount()
 }
 
 // 监听器
@@ -382,56 +467,4 @@ onUnmounted(() => {
   background: #1a1a1a;
 }
 
-.control-panel {
-  width: 300px;
-  padding: 16px;
-  background: #f5f7fa;
-  overflow-y: auto;
-  border-left: 1px solid #e4e7ed;
-}
-
-.control-card,
-.info-card {
-  margin-bottom: 16px;
-}
-
-.card-header {
-  font-weight: 600;
-  color: #303133;
-  font-size: 14px;
-}
-
-.control-group {
-  margin-bottom: 12px;
-}
-
-.control-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.control-item span {
-  font-size: 12px;
-  color: #606266;
-  margin-bottom: 4px;
-}
-
-.info-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 0;
-  font-size: 12px;
-  color: #606266;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.info-item:last-child {
-  border-bottom: none;
-}
-
-.info-item span:first-child {
-  font-weight: 500;
-  color: #303133;
-}
 </style>

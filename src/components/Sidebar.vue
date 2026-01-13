@@ -265,7 +265,7 @@ onMounted(() => {
 
 <style scoped>
 .sidebar {
-  width: 240px;
+  width: 180px;
   height: 100vh;
   background-color: #2c3e50;
   color: #ecf0f1;
@@ -313,7 +313,7 @@ onMounted(() => {
 }
 
 .sidebar-menu {
-  padding: 0 0 20px 0;
+  padding: 0 0 0px 0;
 }
 
 .menu-item {
