@@ -19,7 +19,23 @@
         :key="item.key"
         class="menu-item"
       >
+        <!-- 顶级菜单项（没有children） -->
+        <router-link
+          v-if="item.path"
+          :to="item.path"
+          class="menu-parent menu-link"
+          :class="{ active: $route.path === item.path, collapsed: props.collapsed }"
+          @mouseenter="handleMenuHover(item.key, $event)"
+        >
+          <el-icon class="menu-icon">
+            <component :is="item.icon" />
+          </el-icon>
+          <span v-if="!props.collapsed" class="menu-title">{{ item.title }}</span>
+        </router-link>
+
+        <!-- 可展开的菜单项（有children） -->
         <div
+          v-else
           class="menu-parent"
           :class="{ active: isActiveParent(item), collapsed: props.collapsed }"
           @click="toggleMenu(item.key)"
@@ -71,7 +87,10 @@ import {
   Setting,
   Histogram,
   User,
-  Share
+  Share,
+  DocumentAdd,
+  Aim,
+  MapLocation
 } from '@element-plus/icons-vue'
 import HoverSubmenuModal from './HoverSubmenuModal.vue'
 
@@ -84,7 +103,8 @@ interface MenuItem {
   key: string
   title: string
   icon: any // Icon component
-  children: MenuChild[]
+  children?: MenuChild[]
+  path?: string
 }
 
 interface Props {
@@ -108,10 +128,20 @@ const menuItems: MenuItem[] = [
     icon: Location,
     children: [
       { path: '/navigation/overview', title: '导航概览' },
-      { path: '/navigation/route-planning', title: '路径规划' },
-      { path: '/navigation/waypoints', title: '航点管理' },
-      { path: '/navigation/map-management', title: '地图管理' }
+      { path: '/navigation/route-planning', title: '路径规划' }
     ]
+  },
+  {
+    key: 'waypoints',
+    title: '航点管理',
+    icon: Aim,
+    path: '/waypoints'
+  },
+  {
+    key: 'map-management',
+    title: '地图管理',
+    icon: MapLocation,
+    path: '/map-management'
   },
   {
     key: 'control',
@@ -143,16 +173,32 @@ const menuItems: MenuItem[] = [
       { path: '/user-management/user-list', title: '用户列表' },
       { path: '/user-management/user-add', title: '添加用户' }
     ]
+  },
+  {
+    key: 'task-management',
+    title: '任务管理',
+    icon: DocumentAdd,
+    children: [
+      { path: '/task-management/task-list', title: '任务列表' },
+      { path: '/task-management/task-create', title: '创建任务' }
+    ]
   }
 ]
 
 const isActiveParent = (item: MenuItem): boolean => {
-  return item.children.some(child => route.path === child.path)
+  if (item.path) {
+    // 顶级菜单项
+    return route.path === item.path
+  } else if (item.children) {
+    // 有子项的菜单
+    return item.children.some(child => route.path === child.path)
+  }
+  return false
 }
 
-const hoveredMenuItem = computed(() => {
+const hoveredMenuItem = computed((): MenuItem | null => {
   if (!hoveredMenu.value) return null
-  return menuItems.find(item => item.key === hoveredMenu.value)
+  return menuItems.find(item => item.key === hoveredMenu.value) || null
 })
 
 const toggleMenu = (key: string) => {
@@ -275,7 +321,8 @@ onMounted(() => {
   background-color: #34495e;
 }
 
-.menu-parent.active {
+.menu-parent.active,
+.menu-link.active {
   background-color: #3498db;
   color: white;
 }

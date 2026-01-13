@@ -34,7 +34,8 @@ interface MenuItem {
   key: string
   title: string
   icon: any
-  children: MenuChild[]
+  children?: MenuChild[]
+  path?: string
 }
 
 interface Props {
