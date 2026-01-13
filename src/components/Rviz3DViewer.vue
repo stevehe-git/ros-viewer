@@ -74,7 +74,7 @@ const showPath = ref(false)
 const showLaser = ref(false)
 const cameraMode = ref('orbit')
 const backgroundColor = ref('#fdfdfd')
-const fps = ref(60)
+const fps = ref(30)
 const cameraPos = ref({ x: 0, y: 0, z: 0 })
 const objectCount = ref(0)
 const memoryUsage = ref(0)
@@ -82,6 +82,11 @@ const textureCount = ref(0)
 const isRecording = ref(false)
 const performanceMode = ref(false)
 const showDebugInfo = ref(false)
+
+// FPS控制
+const targetFPS = 30
+const frameInterval = 1000 / targetFPS
+let lastRenderTime = 0
 
 // 3D对象
 let gridHelper: THREE.GridHelper
@@ -371,7 +376,8 @@ const updateFPS = () => {
   const delta = currentTime - lastTime
 
   if (delta >= 1000) {
-    fps.value = Math.round((frameCount * 1000) / delta)
+    // 由于我们限制了渲染频率，这里显示目标FPS而不是实际的requestAnimationFrame频率
+    fps.value = targetFPS
     frameCount = 0
     lastTime = currentTime
   }
@@ -385,26 +391,31 @@ const updateCameraPos = () => {
   }
 }
 
-const animate = () => {
+const animate = (currentTime: number = 0) => {
   animationId = requestAnimationFrame(animate)
 
-  // 更新控制器
-  controls.update()
+  // 控制渲染频率
+  if (currentTime - lastRenderTime >= frameInterval) {
+    lastRenderTime = currentTime
 
-  // 更新机器人旋转（演示动画）
-  if (robotGroup && showRobot.value) {
-    robotGroup.rotation.y += 0.01
+    // 更新控制器
+    controls.update()
+
+    // 更新机器人旋转（演示动画）
+    if (robotGroup && showRobot.value) {
+      robotGroup.rotation.y += 0.01
+    }
+
+    // 渲染场景
+    renderer.render(scene, camera)
+
+    // 更新信息
+    updateFPS()
+    updateCameraPos()
+    updateObjectCount()
+    updateMemoryUsage()
+    updateTextureCount()
   }
-
-  // 渲染场景
-  renderer.render(scene, camera)
-
-  // 更新信息
-  updateFPS()
-  updateCameraPos()
-  updateObjectCount()
-  updateMemoryUsage()
-  updateTextureCount()
 }
 
 // 监听器
