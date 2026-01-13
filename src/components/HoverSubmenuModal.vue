@@ -62,7 +62,8 @@ const modalStyle = computed(() => {
 
   // 计算modal位置，使其在触发元素右侧居中显示
   const triggerCenterY = props.triggerRect.top + (props.triggerRect.height / 2)
-  const modalTop = Math.max(0, triggerCenterY - (modalHeight / 2))
+  const headerHeight = 60 // header高度
+  const modalTop = Math.max(headerHeight, triggerCenterY - (modalHeight / 2))
 
   return {
     left: `${sidebarWidth}px`,
@@ -86,7 +87,7 @@ const handleMouseLeave = () => {
   position: fixed;
   background-color: white;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
+  z-index: 2000;
   border-radius: 6px;
   border: 1px solid #e4e7ed;
   overflow: hidden;
