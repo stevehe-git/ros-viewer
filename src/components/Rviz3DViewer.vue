@@ -168,13 +168,9 @@ const initScene = () => {
   controls.enablePan = true
   controls.panSpeed = 0.8
 
-  // 创建网格
-  gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x222222)
-  scene.add(gridHelper)
-
-  // 创建坐标轴
-  axesHelper = new THREE.AxesHelper(5)
-  scene.add(axesHelper)
+  // 创建网格和坐标轴（使用配置选项）
+  updateGridHelper()
+  updateAxesHelper()
 
   // 创建机器人模型
   createRobot()
@@ -223,6 +219,78 @@ const initScene = () => {
 
   // 开始渲染循环
   animate()
+}
+
+const updateGridHelper = () => {
+  if (!scene) return
+
+  // 移除现有的网格
+  if (gridHelper) {
+    scene.remove(gridHelper)
+  }
+
+  // 获取grid配置
+  const gridComponent = rvizStore.displayComponents.find(c => c.type === 'grid')
+  const options = gridComponent?.options || {}
+
+  // 使用配置选项创建网格
+  const cellSize = options.cellSize || 1
+  const planeCellCount = options.planeCellCount || 10
+  const color = options.color || '#a0a0a4'
+
+  // 将颜色字符串转换为Three.js颜色
+  const threeColor = new THREE.Color(color)
+
+  gridHelper = new THREE.GridHelper(
+    planeCellCount * cellSize,
+    planeCellCount,
+    threeColor,
+    threeColor.clone().multiplyScalar(0.5)
+  )
+
+  // 设置透明度
+  if (options.alpha !== undefined) {
+    gridHelper.material.transparent = true
+    gridHelper.material.opacity = options.alpha
+  }
+
+  // 设置位置偏移
+  if (options.offsetX || options.offsetY || options.offsetZ) {
+    gridHelper.position.set(
+      options.offsetX || 0,
+      options.offsetY || 0,
+      options.offsetZ || 0
+    )
+  }
+
+  scene.add(gridHelper)
+  gridHelper.visible = rvizStore.sceneState.showGrid
+}
+
+const updateAxesHelper = () => {
+  if (!scene) return
+
+  // 移除现有的坐标轴
+  if (axesHelper) {
+    scene.remove(axesHelper)
+  }
+
+  // 获取axes配置
+  const axesComponent = rvizStore.displayComponents.find(c => c.type === 'axes')
+  const options = axesComponent?.options || {}
+
+  // 使用配置选项创建坐标轴
+  const length = options.length || 1
+  axesHelper = new THREE.AxesHelper(length)
+
+  // 设置透明度
+  if (options.alpha !== undefined) {
+    axesHelper.material.transparent = true
+    axesHelper.material.opacity = options.alpha
+  }
+
+  scene.add(axesHelper)
+  axesHelper.visible = rvizStore.sceneState.showAxes
 }
 
 const createRobot = () => {
@@ -738,6 +806,22 @@ watch(() => rvizStore.sceneState.showAxes, (val: boolean) => {
   }
 })
 
+// 监听grid组件的选项变化
+watch(() => {
+  const gridComponent = rvizStore.displayComponents.find(c => c.type === 'grid')
+  return gridComponent?.options
+}, () => {
+  updateGridHelper()
+}, { deep: true })
+
+// 监听axes组件的选项变化
+watch(() => {
+  const axesComponent = rvizStore.displayComponents.find(c => c.type === 'axes')
+  return axesComponent?.options
+}, () => {
+  updateAxesHelper()
+}, { deep: true })
+
 // 监听面板变化，当面板显示/隐藏时触发resize
 watch(() => props.enabledPanels, (newPanels) => {
   // 如果面板被隐藏，恢复viewer-container为100%宽度
@@ -766,6 +850,9 @@ onMounted(() => {
       }
     }
   })
+
+  // 确保store初始化完成后，再初始化场景
+  rvizStore.init()
   initScene()
 })
 
