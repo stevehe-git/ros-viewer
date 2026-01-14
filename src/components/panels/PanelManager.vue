@@ -57,6 +57,10 @@
         @remove-display="handleRemoveDisplay"
         @rename-display="handleRenameDisplay"
       />
+
+      <RobotConnectionPanel
+        v-if="isPanelEnabled('robot-connection')"
+      />
     </div>
   </div>
 </template>
@@ -68,6 +72,7 @@ import ViewControlPanel from './ViewControlPanel.vue'
 import SceneInfoPanel from './SceneInfoPanel.vue'
 import ToolPanel from './ToolPanel.vue'
 import DisplayPanel from './DisplayPanel.vue'
+import RobotConnectionPanel from './RobotConnectionPanel.vue'
 
 // 使用RViz store
 const rvizStore = useRvizStore()

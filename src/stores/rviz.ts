@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
+import { PluginRegistry } from '@/plugins/communication'
 
 // Display组件配置接口
 export interface DisplayComponentData {
@@ -17,6 +18,48 @@ export interface GlobalOptions {
   backgroundColor: string
   frameRate: number
   defaultLight: boolean
+}
+
+// 连接参数接口
+export interface ConnectionParams {
+  host: string
+  port: number
+  [key: string]: any
+}
+
+// 通信插件接口
+export interface CommunicationPlugin {
+  id: string
+  name: string
+  description: string
+  // 获取连接参数配置
+  getConnectionParams(): ConnectionParam[]
+  connect(params: ConnectionParams): Promise<boolean>
+  disconnect(): void
+  getTopics(): Promise<string[]>
+  isConnected(): boolean
+  getConnectionInfo(): ConnectionParams & { status: string }
+}
+
+// 连接参数配置接口
+export interface ConnectionParam {
+  key: string
+  label: string
+  type: 'text' | 'number' | 'password' | 'select'
+  required: boolean
+  defaultValue: any
+  options?: { label: string; value: any }[] // 用于select类型
+  placeholder?: string
+  description?: string
+}
+
+// 机器人连接接口
+export interface RobotConnection {
+  protocol: string
+  params: ConnectionParams
+  connected: boolean
+  topics: string[]
+  availablePlugins: CommunicationPlugin[]
 }
 
 // 面板配置接口
@@ -47,6 +90,24 @@ export interface SceneState {
 }
 
 export const useRvizStore = defineStore('rviz', () => {
+  // 通信插件注册表
+  const communicationPlugins = ref<Map<string, CommunicationPlugin>>(new Map())
+
+  // 当前使用的插件实例
+  let currentPlugin: CommunicationPlugin | null = null
+
+  // 机器人连接
+  const robotConnection = reactive<RobotConnection>({
+    protocol: 'ros',
+    params: {
+      host: 'localhost',
+      port: 9090
+    },
+    connected: false,
+    topics: [],
+    availablePlugins: []
+  })
+
   // 面板配置
   const panelConfig = reactive<PanelConfig>({
     enabledPanels: ['view-control', 'scene-info', 'tools', 'display'],
@@ -341,6 +402,95 @@ export const useRvizStore = defineStore('rviz', () => {
     }
   }
 
+  // 插件管理方法
+  const registerPlugin = (plugin: CommunicationPlugin) => {
+    communicationPlugins.value.set(plugin.id, plugin)
+    updateAvailablePlugins()
+  }
+
+  const unregisterPlugin = (pluginId: string) => {
+    communicationPlugins.value.delete(pluginId)
+    updateAvailablePlugins()
+  }
+
+  const getPlugin = (pluginId: string): CommunicationPlugin | null => {
+    return communicationPlugins.value.get(pluginId) || null
+  }
+
+  const updateAvailablePlugins = () => {
+    robotConnection.availablePlugins = Array.from(communicationPlugins.value.values())
+  }
+
+  // 机器人连接管理方法
+  const connectRobot = async (protocol: string, params: ConnectionParams) => {
+    try {
+      // 如果已经连接，先断开
+      if (currentPlugin) {
+        await disconnectRobot()
+      }
+
+      // 获取对应的插件
+      currentPlugin = getPlugin(protocol)
+      if (!currentPlugin) {
+        throw new Error(`Plugin '${protocol}' not found`)
+      }
+
+      robotConnection.protocol = protocol
+      robotConnection.params = { ...params }
+
+      // 使用插件连接
+      const success = await currentPlugin.connect(params)
+      if (!success) {
+        throw new Error('Connection failed')
+      }
+
+      robotConnection.connected = true
+
+      // 获取话题列表
+      try {
+        robotConnection.topics = await currentPlugin.getTopics()
+      } catch (error) {
+        console.warn('Failed to get topics:', error)
+        robotConnection.topics = []
+      }
+
+      return true
+    } catch (error) {
+      console.error('Robot connection failed:', error)
+      robotConnection.connected = false
+      currentPlugin = null
+      return false
+    }
+  }
+
+  const disconnectRobot = () => {
+    try {
+      if (currentPlugin) {
+        currentPlugin.disconnect()
+        currentPlugin = null
+      }
+
+      robotConnection.connected = false
+      robotConnection.topics = []
+    } catch (error) {
+      console.error('Robot disconnection failed:', error)
+    }
+  }
+
+  // ROS连接实现
+
+
+  // 获取话题列表（使用插件系统）
+  const getTopics = async (): Promise<string[]> => {
+    if (!currentPlugin) {
+      throw new Error('No active connection')
+    }
+
+    return await currentPlugin.getTopics()
+  }
+
+  // MQTT连接实现（预留）
+
   // 面板配置管理方法
   const updatePanelConfig = (config: Partial<PanelConfig>) => {
     Object.assign(panelConfig, config)
@@ -417,6 +567,9 @@ export const useRvizStore = defineStore('rviz', () => {
 
   // 初始化
   const init = () => {
+    // 注册所有通信插件
+    PluginRegistry.registerAll({ registerPlugin })
+
     loadPanelConfig()
     loadGlobalOptions()
     loadComponents()
@@ -446,6 +599,7 @@ export const useRvizStore = defineStore('rviz', () => {
 
   return {
     // 状态
+    robotConnection,
     panelConfig,
     globalOptions,
     sceneState,
@@ -462,6 +616,12 @@ export const useRvizStore = defineStore('rviz', () => {
     selectComponent,
     updateGlobalOptions,
     updateSceneState,
+    connectRobot,
+    disconnectRobot,
+    getTopics,
+    registerPlugin,
+    unregisterPlugin,
+    getPlugin,
     updatePanelConfig,
     togglePanel,
     isPanelEnabled,

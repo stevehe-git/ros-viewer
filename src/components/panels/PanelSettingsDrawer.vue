@@ -97,6 +97,12 @@ const availablePanels = ref<Panel[]>([
     title: '显示配置',
     description: 'Grid、Axes等显示项配置',
     icon: View
+  },
+  {
+    id: 'robot-connection',
+    title: '机器人连接',
+    description: 'ROS、MQTT等协议连接管理',
+    icon: Monitor
   }
 ])
 
