@@ -4,7 +4,7 @@
 
     <!-- 可拖动分割条 -->
     <div
-      v-if="enabledPanels.length > 0"
+      v-if="rvizStore.panelConfig.enabledPanels.length > 0"
       class="splitter"
       @mousedown="startResize"
       :class="{ resizing: isResizing }"
@@ -14,9 +14,8 @@
 
     <!-- 面板管理系统 -->
     <PanelManager
-      v-if="enabledPanels.length > 0"
+      v-if="rvizStore.panelConfig.enabledPanels.length > 0"
       ref="panelManagerRef"
-      :enabled-panels="enabledPanels"
       :camera-mode="rvizStore.sceneState.cameraMode"
       :show-grid="rvizStore.sceneState.showGrid"
       :show-axes="rvizStore.sceneState.showAxes"
@@ -73,12 +72,10 @@ import PanelManager from './panels/PanelManager.vue'
 const rvizStore = useRvizStore()
 
 interface Props {
-  enabledPanels?: string[]
   isFullscreen?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  enabledPanels: () => ['view-control', 'scene-info', 'tools'],
   isFullscreen: false
 })
 
@@ -119,7 +116,7 @@ let lastRenderTime = 0
 
 // 3D对象
 let gridHelper: THREE.GridHelper
-let axesHelper: THREE.Group
+let axesHelper: THREE.AxesHelper
 let robotGroup: THREE.Group
 let mapMesh: THREE.Mesh
 let pathLine: THREE.Line
@@ -281,42 +278,12 @@ const updateAxesHelper = () => {
 
   // 使用配置选项创建坐标轴
   const length = options.length || 1
-  const radius = options.radius || 0.01 // 默认半径
-
-  // 创建自定义坐标轴，支持设置半径
-  axesHelper = new THREE.Group()
-
-  // X轴 (红色) - 从原点到(length, 0, 0)
-  const xGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
-  const xMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 })
-  const xAxis = new THREE.Mesh(xGeometry, xMaterial)
-  xAxis.rotation.z = -Math.PI / 2 // 旋转到X轴方向
-  xAxis.position.x = length / 2
-  axesHelper.add(xAxis)
-
-  // Y轴 (绿色) - 从原点到(0, length, 0)
-  const yGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
-  const yMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
-  const yAxis = new THREE.Mesh(yGeometry, yMaterial)
-  yAxis.position.y = length / 2
-  axesHelper.add(yAxis)
-
-  // Z轴 (蓝色) - 从原点到(0, 0, length)
-  const zGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
-  const zMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff })
-  const zAxis = new THREE.Mesh(zGeometry, zMaterial)
-  zAxis.rotation.x = Math.PI / 2 // 旋转到Z轴方向
-  zAxis.position.z = length / 2
-  axesHelper.add(zAxis)
+  axesHelper = new THREE.AxesHelper(length)
 
   // 设置透明度
   if (options.alpha !== undefined) {
-    axesHelper.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.material) {
-        child.material.transparent = true
-        child.material.opacity = options.alpha
-      }
-    })
+    axesHelper.material.transparent = true
+    axesHelper.material.opacity = options.alpha
   }
 
   scene.add(axesHelper)
@@ -734,21 +701,10 @@ const stopResize = () => {
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
 
-  // 保存宽度到localStorage
-  localStorage.setItem('rviz-panel-width', panelWidth.value.toString())
+  // 更新store中的面板宽度
+  rvizStore.updatePanelConfig({ panelWidth: panelWidth.value })
 }
 
-// 加载保存的面板宽度
-const loadPanelWidth = () => {
-  const saved = localStorage.getItem('rviz-panel-width')
-  if (saved) {
-    const width = parseInt(saved, 10)
-    if (width >= 200 && width <= 600) {
-      panelWidth.value = width
-      viewerWidth.value = `calc(100% - ${width}px)`
-    }
-  }
-}
 
 const updateFPS = () => {
   frameCount++
@@ -853,13 +809,13 @@ watch(() => {
 }, { deep: true })
 
 // 监听面板变化，当面板显示/隐藏时触发resize
-watch(() => props.enabledPanels, (newPanels) => {
+watch(() => rvizStore.panelConfig.enabledPanels, (newPanels) => {
   // 如果面板被隐藏，恢复viewer-container为100%宽度
   if (newPanels.length === 0) {
     viewerWidth.value = '100%'
   } else {
-    // 如果有面板，使用保存的宽度
-    viewerWidth.value = `calc(100% - ${panelWidth.value}px)`
+    // 如果有面板，使用store中的面板宽度
+    viewerWidth.value = `calc(100% - ${rvizStore.panelConfig.panelWidth}px)`
   }
   // 延迟执行，等待DOM更新完成
   nextTick(() => {
@@ -870,19 +826,16 @@ watch(() => props.enabledPanels, (newPanels) => {
 }, { deep: true })
 
 onMounted(() => {
-  loadPanelWidth()
   // 初始化面板管理器宽度
   nextTick(() => {
     if (panelManagerRef.value) {
       const panelElement = (panelManagerRef.value.$el as HTMLElement)
       if (panelElement) {
-        panelElement.style.width = `${panelWidth.value}px`
+        panelElement.style.width = `${rvizStore.panelConfig.panelWidth}px`
       }
     }
   })
 
-  // 确保store初始化完成后，再初始化场景
-  rvizStore.init()
   initScene()
 })
 

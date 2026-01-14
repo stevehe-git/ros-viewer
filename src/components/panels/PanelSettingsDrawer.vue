@@ -37,7 +37,11 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { Setting, Monitor, InfoFilled, Tools, View } from '@element-plus/icons-vue'
+import { useRvizStore } from '@/stores/rviz'
+import { Monitor, InfoFilled, Tools, View } from '@element-plus/icons-vue'
+
+// 使用RViz store
+const rvizStore = useRvizStore()
 
 interface Panel {
   id: string
@@ -52,7 +56,6 @@ interface Props {
 
 interface Emits {
   'update:modelValue': [value: boolean]
-  'update:enabledPanels': [panels: string[]]
 }
 
 const props = defineProps<Props>()
@@ -97,7 +100,7 @@ const availablePanels = ref<Panel[]>([
   }
 ])
 
-const enabledPanels = ref<string[]>(['view-control', 'scene-info', 'tools'])
+const enabledPanels = ref<string[]>([...rvizStore.panelConfig.enabledPanels])
 
 const handlePanelChange = () => {
   // 可以在这里添加实时更新逻辑
@@ -108,7 +111,7 @@ const resetToDefault = () => {
 }
 
 const applySettings = () => {
-  emit('update:enabledPanels', [...enabledPanels.value])
+  rvizStore.updatePanelConfig({ enabledPanels: [...enabledPanels.value] })
   visible.value = false
 }
 

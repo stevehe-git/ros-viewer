@@ -4,15 +4,15 @@
     <div class="active-panels">
       <ViewControlPanel
         v-if="isPanelEnabled('view-control')"
-        :camera-mode="cameraMode"
-        :show-grid="showGrid"
-        :show-axes="showAxes"
-        :show-robot="showRobot"
-        :show-map="showMap"
-        :show-path="showPath"
-        :show-laser="showLaser"
-        :background-color="backgroundColor"
-        :is-fullscreen="isFullscreen"
+        :camera-mode="rvizStore.sceneState.cameraMode"
+        :show-grid="rvizStore.sceneState.showGrid"
+        :show-axes="rvizStore.sceneState.showAxes"
+        :show-robot="rvizStore.sceneState.showRobot"
+        :show-map="rvizStore.sceneState.showMap"
+        :show-path="rvizStore.sceneState.showPath"
+        :show-laser="rvizStore.sceneState.showLaser"
+        :background-color="rvizStore.sceneState.backgroundColor"
+        :is-fullscreen="props.isFullscreen"
         @reset-camera="$emit('resetCamera')"
         @toggle-grid="$emit('toggleGrid')"
         @toggle-axes="$emit('toggleAxes')"
@@ -27,18 +27,18 @@
 
       <SceneInfoPanel
         v-if="isPanelEnabled('scene-info')"
-        :fps="fps"
-        :camera-pos="cameraPos"
-        :object-count="objectCount"
-        :memory-usage="memoryUsage"
-        :texture-count="textureCount"
+        :fps="rvizStore.sceneState.fps"
+        :camera-pos="rvizStore.sceneState.cameraPos"
+        :object-count="rvizStore.sceneState.objectCount"
+        :memory-usage="rvizStore.sceneState.memoryUsage"
+        :texture-count="rvizStore.sceneState.textureCount"
       />
 
       <ToolPanel
         v-if="isPanelEnabled('tools')"
-        :is-recording="isRecording"
-        :performance-mode="performanceMode"
-        :show-debug-info="showDebugInfo"
+        :is-recording="rvizStore.sceneState.isRecording"
+        :performance-mode="rvizStore.sceneState.performanceMode"
+        :show-debug-info="rvizStore.sceneState.showDebugInfo"
         @take-screenshot="$emit('takeScreenshot')"
         @export-scene="$emit('exportScene')"
         @reset-scene="$emit('resetScene')"
@@ -63,36 +63,27 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRvizStore } from '@/stores/rviz'
 import ViewControlPanel from './ViewControlPanel.vue'
 import SceneInfoPanel from './SceneInfoPanel.vue'
 import ToolPanel from './ToolPanel.vue'
 import DisplayPanel from './DisplayPanel.vue'
 
+// 使用RViz store
+const rvizStore = useRvizStore()
+
+// 使用store中的数据，减少props依赖
 interface Props {
-  enabledPanels: string[]
-  cameraMode: string
-  showGrid: boolean
-  showAxes: boolean
-  showRobot: boolean
-  showMap: boolean
-  showPath: boolean
-  showLaser: boolean
-  backgroundColor: string
-  fps: number
-  cameraPos: { x: number; y: number; z: number }
-  objectCount: number
-  memoryUsage: number
-  textureCount: number
-  isRecording: boolean
-  performanceMode: boolean
-  showDebugInfo: boolean
-  isFullscreen: boolean
+  isFullscreen?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  isFullscreen: false
+})
 
+// 使用store中的面板启用状态
 const isPanelEnabled = (panelId: string): boolean => {
-  return props.enabledPanels.indexOf(panelId) !== -1
+  return rvizStore.isPanelEnabled(panelId)
 }
 
 const handleGlobalOptionsUpdate = (options: any) => {
@@ -124,7 +115,7 @@ const handleRenameDisplay = (itemId: string, newName: string) => {
 }
 
 const hasActivePanels = computed(() => {
-  return props.enabledPanels.length > 0
+  return rvizStore.panelConfig.enabledPanels.length > 0
 })
 
 const emit = defineEmits<{

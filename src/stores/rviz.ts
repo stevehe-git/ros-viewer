@@ -19,6 +19,13 @@ export interface GlobalOptions {
   defaultLight: boolean
 }
 
+// 面板配置接口
+export interface PanelConfig {
+  enabledPanels: string[]
+  panelWidth: number
+  isFullscreen: boolean
+}
+
 // 3D场景状态接口
 export interface SceneState {
   showGrid: boolean
@@ -40,6 +47,13 @@ export interface SceneState {
 }
 
 export const useRvizStore = defineStore('rviz', () => {
+  // 面板配置
+  const panelConfig = reactive<PanelConfig>({
+    enabledPanels: ['view-control', 'scene-info', 'tools', 'display'],
+    panelWidth: 300,
+    isFullscreen: false
+  })
+
   // 全局选项
   const globalOptions = reactive<GlobalOptions>({
     fixedFrame: 'map',
@@ -280,6 +294,11 @@ export const useRvizStore = defineStore('rviz', () => {
     localStorage.setItem('rviz-global-options', JSON.stringify(globalOptions))
   }
 
+  // 保存面板配置到本地存储
+  const savePanelConfig = () => {
+    localStorage.setItem('rviz-panel-config', JSON.stringify(panelConfig))
+  }
+
   // 加载组件从本地存储
   const loadComponents = () => {
     const saved = localStorage.getItem('rviz-display-components')
@@ -316,8 +335,96 @@ export const useRvizStore = defineStore('rviz', () => {
     }
   }
 
+  // 加载面板配置从本地存储
+  const loadPanelConfig = () => {
+    const saved = localStorage.getItem('rviz-panel-config')
+    if (saved) {
+      try {
+        const config = JSON.parse(saved)
+        Object.assign(panelConfig, config)
+      } catch (e) {
+        console.error('Failed to load panel config:', e)
+      }
+    }
+  }
+
+  // 面板配置管理方法
+  const updatePanelConfig = (config: Partial<PanelConfig>) => {
+    Object.assign(panelConfig, config)
+    savePanelConfig()
+  }
+
+  const togglePanel = (panelId: string) => {
+    const index = panelConfig.enabledPanels.indexOf(panelId)
+    if (index === -1) {
+      panelConfig.enabledPanels.push(panelId)
+    } else {
+      panelConfig.enabledPanels.splice(index, 1)
+    }
+    savePanelConfig()
+  }
+
+  const isPanelEnabled = (panelId: string): boolean => {
+    return panelConfig.enabledPanels.includes(panelId)
+  }
+
+  // 配置管理方法
+  const saveCurrentConfig = () => {
+    const config = {
+      panelConfig: { ...panelConfig },
+      globalOptions: { ...globalOptions },
+      displayComponents: [...displayComponents.value],
+      sceneState: { ...sceneState }
+    }
+    localStorage.setItem('rviz-full-config', JSON.stringify(config))
+    return config
+  }
+
+  const loadSavedConfig = () => {
+    const saved = localStorage.getItem('rviz-full-config')
+    if (saved) {
+      try {
+        const config = JSON.parse(saved)
+        if (config.panelConfig) Object.assign(panelConfig, config.panelConfig)
+        if (config.globalOptions) Object.assign(globalOptions, config.globalOptions)
+        if (config.displayComponents) displayComponents.value = config.displayComponents
+        if (config.sceneState) Object.assign(sceneState, config.sceneState)
+        return config
+      } catch (e) {
+        console.error('Failed to load config:', e)
+      }
+    }
+    return null
+  }
+
+  const exportConfig = () => {
+    const config = saveCurrentConfig()
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' })
+    const link = document.createElement('a')
+    link.download = `rviz-config-${new Date().getTime()}.json`
+    link.href = URL.createObjectURL(blob)
+    link.click()
+  }
+
+  const importConfig = (configData: any) => {
+    try {
+      if (configData.panelConfig) Object.assign(panelConfig, configData.panelConfig)
+      if (configData.globalOptions) Object.assign(globalOptions, configData.globalOptions)
+      if (configData.displayComponents) displayComponents.value = configData.displayComponents
+      if (configData.sceneState) Object.assign(sceneState, configData.sceneState)
+
+      // 保存到本地存储
+      saveCurrentConfig()
+      return true
+    } catch (e) {
+      console.error('Failed to import config:', e)
+      return false
+    }
+  }
+
   // 初始化
   const init = () => {
+    loadPanelConfig()
     loadGlobalOptions()
     loadComponents()
   }
@@ -346,6 +453,7 @@ export const useRvizStore = defineStore('rviz', () => {
 
   return {
     // 状态
+    panelConfig,
     globalOptions,
     sceneState,
     displayComponents,
@@ -361,11 +469,20 @@ export const useRvizStore = defineStore('rviz', () => {
     selectComponent,
     updateGlobalOptions,
     updateSceneState,
+    updatePanelConfig,
+    togglePanel,
+    isPanelEnabled,
+    saveCurrentConfig,
+    loadSavedConfig,
+    exportConfig,
+    importConfig,
     init,
     resetScene,
     saveComponents,
     saveGlobalOptions,
+    savePanelConfig,
     loadComponents,
-    loadGlobalOptions
+    loadGlobalOptions,
+    loadPanelConfig
   }
 })

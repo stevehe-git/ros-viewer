@@ -13,12 +13,10 @@
     <!-- 面板设置抽屉 -->
     <PanelSettingsDrawer
       v-model="showPanelSettings"
-      @update:enabled-panels="handleEnabledPanelsUpdate"
     />
 
     <div class="viewer-wrapper" ref="viewerWrapperRef">
       <Rviz3DViewer
-        :enabled-panels="enabledPanels"
         :is-fullscreen="isFullscreen"
         @toggle-fullscreen="toggleFullscreen"
       />
@@ -35,7 +33,6 @@ import PanelSettingsDrawer from '@/components/panels/PanelSettingsDrawer.vue'
 const isFullscreen = ref(false)
 const viewerWrapperRef = ref<HTMLElement>()
 const showPanelSettings = ref(false)
-const enabledPanels = ref<string[]>(['view-control', 'scene-info', 'tools'])
 
 const toggleFullscreen = () => {
   if (!viewerWrapperRef.value) return
@@ -65,21 +62,6 @@ const toggleFullscreen = () => {
   }
 }
 
-const handleEnabledPanelsUpdate = (panels: string[]) => {
-  enabledPanels.value = panels
-  // 保存到localStorage
-  localStorage.setItem('rviz-enabled-panels', JSON.stringify(panels))
-}
-
-// 初始化时加载面板设置
-const loadEnabledPanels = () => {
-  const saved = localStorage.getItem('rviz-enabled-panels')
-  if (saved) {
-    enabledPanels.value = JSON.parse(saved)
-  }
-}
-
-loadEnabledPanels()
 
 // 监听全屏状态变化
 document.addEventListener('fullscreenchange', () => {
