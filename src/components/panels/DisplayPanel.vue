@@ -126,15 +126,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import {
   Setting,
   Warning,
   ArrowDown
 } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
+import { useRvizStore } from '@/stores/rviz'
 import DisplayComponent from './DisplayComponent.vue'
 import DisplayTypeSelector from './DisplayTypeSelector.vue'
+
+// 使用RViz store
+const rvizStore = useRvizStore()
 
 // 展开状态
 const expandedItems = reactive<Record<string, boolean>>({
@@ -142,30 +146,13 @@ const expandedItems = reactive<Record<string, boolean>>({
   'global-status': true
 })
 
-const selectedItem = ref<string>('')
-
-// 显示组件列表
-interface DisplayComponentData {
-  id: string
-  type: string
-  name: string
-  enabled: boolean
-  expanded: boolean
-  options: Record<string, any>
-}
-
-const displayComponents = ref<DisplayComponentData[]>([])
-
-// 配置数据
-const globalOptions = reactive({
-  fixedFrame: 'map',
-  backgroundColor: '#303030',
-  frameRate: 30,
-  defaultLight: true
-})
-
 // 显示类型选择器
 const showTypeSelector = ref(false)
+
+// 计算属性
+const selectedItem = computed(() => rvizStore.selectedItem)
+const displayComponents = computed(() => rvizStore.displayComponents)
+const globalOptions = computed(() => rvizStore.globalOptions)
 
 // 方法
 const toggleItem = (itemId: string) => {
@@ -173,15 +160,14 @@ const toggleItem = (itemId: string) => {
 }
 
 const handleToggleComponent = (componentId: string) => {
-  const component = displayComponents.value.find((c: DisplayComponentData) => c.id === componentId)
+  const component = rvizStore.displayComponents.find((c) => c.id === componentId)
   if (component) {
-    component.expanded = !component.expanded
-    expandedItems[componentId] = component.expanded
+    rvizStore.updateComponent(componentId, { expanded: !component.expanded })
   }
 }
 
 const selectItem = (itemId: string) => {
-  selectedItem.value = itemId
+  rvizStore.selectComponent(itemId)
 }
 
 const formatColor = (color: string): string => {
@@ -195,125 +181,35 @@ const formatColor = (color: string): string => {
 }
 
 const updateGlobalOptions = () => {
-  emit('update:globalOptions', { ...globalOptions })
+  rvizStore.updateGlobalOptions({ ...rvizStore.globalOptions })
 }
 
 // 处理添加组件
 const handleAddComponent = (type: any) => {
-  const componentId = `${type.id}-${Date.now()}`
-  const component: DisplayComponentData = {
-    id: componentId,
-    type: type.id,
-    name: type.name,
-    enabled: true,
-    expanded: true,
-    options: getDefaultOptions(type.id)
-  }
-  displayComponents.value.push(component)
-  selectedItem.value = componentId
-  expandedItems[componentId] = true
-  
-  emit('addComponent', component)
-}
-
-// 获取默认配置
-const getDefaultOptions = (type: string): Record<string, any> => {
-  const defaults: Record<string, any> = {
-    grid: {
-      referenceFrame: '<Fixed Frame>',
-      planeCellCount: 10,
-      normalCellCount: 0,
-      cellSize: 1,
-      lineStyle: 'Lines',
-      color: '#a0a0a4',
-      alpha: 0.5,
-      plane: 'XY',
-      offset: '0; 0; 0',
-      offsetX: 0,
-      offsetY: 0,
-      offsetZ: 0
-    },
-    axes: {
-      referenceFrame: '<Fixed Frame>',
-      length: 1,
-      radius: 0.1,
-      showTrail: false,
-      alpha: 1
-    },
-    camera: {
-      topic: '/camera/image_raw',
-      queueSize: 2,
-      transportHint: 'raw'
-    },
-    map: {
-      topic: '/map',
-      alpha: 0.7,
-      drawBehind: false
-    },
-    path: {
-      topic: '/path',
-      color: '#ff0000',
-      bufferLength: 1
-    },
-    marker: {
-      topic: '/marker',
-      queueSize: 100
-    },
-    image: {
-      topic: '/camera/image_raw',
-      queueSize: 2,
-      transportHint: 'raw'
-    },
-    laserscan: {
-      topic: '/scan',
-      queueSize: 10
-    },
-    pointcloud2: {
-      topic: '/pointcloud',
-      queueSize: 10
-    }
-  }
-  return defaults[type] || {}
+  rvizStore.addComponent(type.id, type.name)
 }
 
 // 更新组件配置
-const updateComponent = (componentId: string, options: Record<string, any>) => {
-  const component = displayComponents.value.find((c: DisplayComponentData) => c.id === componentId)
-  if (component) {
-    component.options = { ...component.options, ...options }
-    emit('updateComponent', component)
+const updateComponent = (componentId: string, updates: Record<string, any>) => {
+  if (updates.options) {
+    rvizStore.updateComponentOptions(componentId, updates.options)
+  } else {
+    rvizStore.updateComponent(componentId, updates)
   }
 }
 
 // 删除组件
 const removeComponent = (componentId: string) => {
-  const index = displayComponents.value.findIndex((c: DisplayComponentData) => c.id === componentId)
-  if (index !== -1) {
-    displayComponents.value.splice(index, 1)
-    if (selectedItem.value === componentId) {
-      selectedItem.value = ''
-    }
-    emit('removeComponent', componentId)
-  }
+  rvizStore.removeComponent(componentId)
 }
 
 const duplicateDisplay = () => {
-  const component = displayComponents.value.find((c: DisplayComponentData) => c.id === selectedItem.value)
-  if (component) {
-    const duplicated: DisplayComponentData = {
-      ...component,
-      id: `${component.type}-${Date.now()}`,
-      name: `${component.name} (Copy)`
-    }
-    displayComponents.value.push(duplicated)
-    selectedItem.value = duplicated.id
-    emit('duplicateComponent', duplicated)
-  }
+  rvizStore.duplicateComponent(rvizStore.selectedItem)
 }
 
 const removeDisplay = () => {
-  if (!selectedItem.value) return
-  const component = displayComponents.value.find((c: DisplayComponentData) => c.id === selectedItem.value)
+  if (!rvizStore.selectedItem) return
+  const component = rvizStore.displayComponents.find((c) => c.id === rvizStore.selectedItem)
   if (component) {
     ElMessageBox.confirm(
       `Are you sure you want to remove this display?`,
@@ -324,7 +220,7 @@ const removeDisplay = () => {
         type: 'warning'
       }
     ).then(() => {
-      removeComponent(selectedItem.value)
+      removeComponent(rvizStore.selectedItem)
     }).catch(() => {
       // User cancelled
     })
@@ -332,8 +228,8 @@ const removeDisplay = () => {
 }
 
 const renameDisplay = () => {
-  if (!selectedItem.value) return
-  const component = displayComponents.value.find((c: DisplayComponentData) => c.id === selectedItem.value)
+  if (!rvizStore.selectedItem) return
+  const component = rvizStore.displayComponents.find((c) => c.id === rvizStore.selectedItem)
   if (!component) return
 
   ElMessageBox.prompt('Enter new name:', 'Rename Display', {
@@ -344,70 +240,21 @@ const renameDisplay = () => {
     inputErrorMessage: 'Display name cannot be empty'
   }).then(({ value }) => {
     if (value) {
-      component.name = value
-      emit('renameComponent', component.id, value)
+      rvizStore.renameComponent(component.id, value)
     }
   }).catch(() => {
     // User cancelled
   })
 }
 
-// 加载保存的组件
-const loadComponents = () => {
-  const saved = localStorage.getItem('rviz-display-components')
-  if (saved) {
-    try {
-      displayComponents.value = JSON.parse(saved)
-      displayComponents.value.forEach((comp: DisplayComponentData) => {
-        expandedItems[comp.id] = comp.expanded || false
-      })
-    } catch (e) {
-      console.error('Failed to load display components:', e)
-    }
-  } else {
-    // 默认添加Grid和Axes
-    handleAddComponent({ id: 'grid', name: 'Grid' })
-    handleAddComponent({ id: 'axes', name: 'Axes' })
-  }
-}
-
-// 保存组件
-const saveComponents = () => {
-  localStorage.setItem('rviz-display-components', JSON.stringify(displayComponents.value))
-}
-
-// 监听组件变化，自动保存
-watch(() => displayComponents.value, () => {
-  saveComponents()
-}, { deep: true })
-
-// 监听组件变化，自动保存展开状态
-watch(() => expandedItems, () => {
-  displayComponents.value.forEach((comp: DisplayComponentData) => {
-    if (expandedItems[comp.id] !== undefined) {
-      comp.expanded = expandedItems[comp.id] || false
-    }
-  })
-  saveComponents()
-}, { deep: true })
-
 onMounted(() => {
-  loadComponents()
+  // 初始化store（如果还没有初始化）
+  rvizStore.init()
 })
 
+// 不再需要emit，因为所有状态都通过Pinia管理
 const emit = defineEmits<{
-  'update:globalOptions': [options: any]
-  'update:gridOptions': [options: any]
-  'update:axesOptions': [options: any]
-  addComponent: [component: DisplayComponentData]
-  updateComponent: [component: DisplayComponentData]
-  removeComponent: [componentId: string]
-  duplicateComponent: [component: DisplayComponentData]
-  renameComponent: [componentId: string, newName: string]
-  addDisplay: [name: string]
-  duplicateDisplay: [itemId: string]
-  removeDisplay: [itemId: string]
-  renameDisplay: [itemId: string, newName: string]
+  // 保留空的emit定义，因为可能还有其他地方使用
 }>()
 </script>
 

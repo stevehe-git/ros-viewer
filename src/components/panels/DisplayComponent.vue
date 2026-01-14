@@ -43,8 +43,8 @@
       <!-- 根据组件类型渲染不同的配置项 -->
       <component
         :is="getConfigComponent(component.type)"
+        :component-id="component.id"
         :options="component.options"
-        @update="handleOptionsUpdate"
       />
     </div>
   </div>
@@ -52,6 +52,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch } from 'vue'
+import { useRvizStore } from '@/stores/rviz'
 import {
   Grid,
   Position,
@@ -74,6 +75,9 @@ import MarkerConfig from './display-configs/MarkerConfig.vue'
 import ImageConfig from './display-configs/ImageConfig.vue'
 import LaserScanConfig from './display-configs/LaserScanConfig.vue'
 import PointCloud2Config from './display-configs/PointCloud2Config.vue'
+
+// 使用RViz store
+const rvizStore = useRvizStore()
 
 interface DisplayComponentData {
   id: string
@@ -136,19 +140,12 @@ const toggleSubItem = (itemId: string) => {
 }
 
 const handleEnabledChange = (value: boolean) => {
-  props.component.enabled = value
-  emit('update', props.component.id, { enabled: value })
-}
-
-const handleOptionsUpdate = (options: Record<string, any>) => {
-  emit('update', props.component.id, options)
+  rvizStore.updateComponent(props.component.id, { enabled: value })
 }
 
 const emit = defineEmits<{
   select: [id: string]
   toggle: [id: string]
-  update: [id: string, options: Record<string, any>]
-  remove: [id: string]
 }>()
 </script>
 

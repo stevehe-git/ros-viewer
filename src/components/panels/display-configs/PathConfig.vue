@@ -35,11 +35,15 @@
 </template>
 
 <script setup lang="ts">
+import { useRvizStore } from '@/stores/rviz'
+
 interface Props {
+  componentId: string
   options: Record<string, any>
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
+const rvizStore = useRvizStore()
 
 const formatColor = (color: string): string => {
   if (color && color.indexOf('#') === 0) {
@@ -52,12 +56,8 @@ const formatColor = (color: string): string => {
 }
 
 const update = (key: string, value: any) => {
-  emit('update', { [key]: value })
+  rvizStore.updateComponentOptions(props.componentId, { [key]: value })
 }
-
-defineEmits<{
-  update: [options: Record<string, any>]
-}>()
 </script>
 
 <style scoped>

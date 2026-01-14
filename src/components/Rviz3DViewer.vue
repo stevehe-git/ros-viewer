@@ -17,22 +17,22 @@
       v-if="enabledPanels.length > 0"
       ref="panelManagerRef"
       :enabled-panels="enabledPanels"
-      :camera-mode="cameraMode"
-      :show-grid="showGrid"
-      :show-axes="showAxes"
-      :show-robot="showRobot"
-      :show-map="showMap"
-      :show-path="showPath"
-      :show-laser="showLaser"
-      :background-color="backgroundColor"
-      :fps="fps"
-      :camera-pos="cameraPos"
-      :object-count="objectCount"
-      :memory-usage="memoryUsage"
-      :texture-count="textureCount"
-      :is-recording="isRecording"
-      :performance-mode="performanceMode"
-      :show-debug-info="showDebugInfo"
+      :camera-mode="rvizStore.sceneState.cameraMode"
+      :show-grid="rvizStore.sceneState.showGrid"
+      :show-axes="rvizStore.sceneState.showAxes"
+      :show-robot="rvizStore.sceneState.showRobot"
+      :show-map="rvizStore.sceneState.showMap"
+      :show-path="rvizStore.sceneState.showPath"
+      :show-laser="rvizStore.sceneState.showLaser"
+      :background-color="rvizStore.sceneState.backgroundColor"
+      :fps="rvizStore.sceneState.fps"
+      :camera-pos="rvizStore.sceneState.cameraPos"
+      :object-count="rvizStore.sceneState.objectCount"
+      :memory-usage="rvizStore.sceneState.memoryUsage"
+      :texture-count="rvizStore.sceneState.textureCount"
+      :is-recording="rvizStore.sceneState.isRecording"
+      :performance-mode="rvizStore.sceneState.performanceMode"
+      :show-debug-info="rvizStore.sceneState.showDebugInfo"
       :is-fullscreen="props.isFullscreen"
       @reset-camera="resetCamera"
       @toggle-grid="toggleGrid"
@@ -63,10 +63,14 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { useRvizStore } from '@/stores/rviz'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { MOUSE } from 'three'
 import PanelManager from './panels/PanelManager.vue'
+
+// 使用RViz store
+const rvizStore = useRvizStore()
 
 interface Props {
   enabledPanels?: string[]
@@ -106,23 +110,7 @@ let renderer: THREE.WebGLRenderer
 let controls: OrbitControls
 let animationId: number
 
-// 状态
-const showGrid = ref(true)
-const showAxes = ref(true)
-const showRobot = ref(true)
-const showMap = ref(true)
-const showPath = ref(false)
-const showLaser = ref(false)
-const cameraMode = ref('orbit')
-const backgroundColor = ref('#fdfdfd')
-const fps = ref(30)
-const cameraPos = ref({ x: 0, y: 0, z: 0 })
-const objectCount = ref(0)
-const memoryUsage = ref(0)
-const textureCount = ref(0)
-const isRecording = ref(false)
-const performanceMode = ref(false)
-const showDebugInfo = ref(false)
+// 使用store的状态（通过计算属性或直接访问）
 
 // FPS控制
 let targetFPS = 30
@@ -145,7 +133,7 @@ const initScene = () => {
 
   // 创建场景
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(backgroundColor.value)
+  scene.background = new THREE.Color(rvizStore.sceneState.backgroundColor)
 
   // 创建相机
   const width = containerRef.value.clientWidth
@@ -301,16 +289,16 @@ const resetCamera = () => {
 }
 
 const toggleGrid = () => {
-  showGrid.value = !showGrid.value
+  rvizStore.sceneState.showGrid = !rvizStore.sceneState.showGrid
   if (gridHelper) {
-    gridHelper.visible = showGrid.value
+    gridHelper.visible = rvizStore.sceneState.showGrid
   }
 }
 
 const toggleAxes = () => {
-  showAxes.value = !showAxes.value
+  rvizStore.sceneState.showAxes = !rvizStore.sceneState.showAxes
   if (axesHelper) {
-    axesHelper.visible = showAxes.value
+    axesHelper.visible = rvizStore.sceneState.showAxes
   }
 }
 
@@ -413,8 +401,11 @@ const onWindowResize = () => {
   }
 
   resizeTimer = requestAnimationFrame(() => {
-    const width = containerRef.value!.clientWidth
-    const height = containerRef.value!.clientHeight
+    // 再次检查containerRef.value是否仍然有效
+    if (!containerRef.value || !renderer || !camera) return
+
+    const width = containerRef.value.clientWidth
+    const height = containerRef.value.clientHeight
 
     // 确保尺寸有效
     if (width > 0 && height > 0) {
@@ -430,14 +421,14 @@ const updateObjectCount = () => {
   scene.traverse(() => {
     count++
   })
-  objectCount.value = count
+  rvizStore.sceneState.objectCount = count
 }
 
 const updateMemoryUsage = () => {
   if (renderer && renderer.info) {
     // Three.js的内存信息 (MB)
     const memoryInfo = renderer.info.memory
-    memoryUsage.value = Math.round((memoryInfo.geometries + memoryInfo.textures) * 0.001)
+    rvizStore.sceneState.memoryUsage = Math.round((memoryInfo.geometries + memoryInfo.textures) * 0.001)
   }
 }
 
@@ -452,32 +443,32 @@ const updateTextureCount = () => {
       }
     }
   })
-  textureCount.value = count
+  rvizStore.sceneState.textureCount = count
 }
 
 // 处理面板事件
 const handleCameraModeUpdate = (value: string) => {
-  cameraMode.value = value
+  rvizStore.sceneState.cameraMode = value
 }
 
 const handleShowRobotUpdate = (value: boolean) => {
-  showRobot.value = value
+  rvizStore.sceneState.showRobot = value
 }
 
 const handleShowMapUpdate = (value: boolean) => {
-  showMap.value = value
+  rvizStore.sceneState.showMap = value
 }
 
 const handleShowPathUpdate = (value: boolean) => {
-  showPath.value = value
+  rvizStore.sceneState.showPath = value
 }
 
 const handleShowLaserUpdate = (value: boolean) => {
-  showLaser.value = value
+  rvizStore.sceneState.showLaser = value
 }
 
 const handleBackgroundColorUpdate = (value: string) => {
-  backgroundColor.value = value
+  rvizStore.sceneState.backgroundColor = value
 }
 
 // 工具面板处理函数
@@ -499,15 +490,15 @@ const exportScene = () => {
       target: controls.target
     },
     objects: {
-      showRobot: showRobot.value,
-      showMap: showMap.value,
-      showPath: showPath.value,
-      showLaser: showLaser.value
+      showRobot: rvizStore.sceneState.showRobot,
+      showMap: rvizStore.sceneState.showMap,
+      showPath: rvizStore.sceneState.showPath,
+      showLaser: rvizStore.sceneState.showLaser
     },
     display: {
-      showGrid: showGrid.value,
-      showAxes: showAxes.value,
-      backgroundColor: backgroundColor.value
+      showGrid: rvizStore.sceneState.showGrid,
+      showAxes: rvizStore.sceneState.showAxes,
+      backgroundColor: rvizStore.sceneState.backgroundColor
     }
   }
 
@@ -520,37 +511,28 @@ const exportScene = () => {
 
 const resetScene = () => {
   // 重置所有场景设置
-  showRobot.value = true
-  showMap.value = true
-  showPath.value = false
-  showLaser.value = false
-  showGrid.value = true
-  showAxes.value = true
-  backgroundColor.value = '#1a1a1a'
-  cameraMode.value = 'orbit'
+  rvizStore.resetScene()
   resetCamera()
 }
 
 const toggleRecording = (value: boolean) => {
-  isRecording.value = value
+  rvizStore.sceneState.isRecording = value
   // 这里可以添加录制功能的实现
 }
 
 const togglePerformanceMode = (value: boolean) => {
-  performanceMode.value = value
+  rvizStore.sceneState.performanceMode = value
   // 这里可以添加性能模式的实现
 }
 
 const toggleDebugInfo = (value: boolean) => {
-  showDebugInfo.value = value
+  rvizStore.sceneState.showDebugInfo = value
   // 这里可以添加调试信息的显示/隐藏
 }
 
 // 处理全局选项更新
 const handleGlobalOptionsUpdate = (options: any) => {
-  if (options.backgroundColor) {
-    backgroundColor.value = options.backgroundColor
-  }
+  rvizStore.updateGlobalOptions(options)
   if (options.frameRate !== undefined) {
     // 可以更新FPS设置
     targetFPS = options.frameRate
@@ -561,7 +543,7 @@ const handleGlobalOptionsUpdate = (options: any) => {
 // 处理网格选项更新
 const handleGridOptionsUpdate = (options: any) => {
   if (options.enabled !== undefined) {
-    showGrid.value = options.enabled
+    rvizStore.sceneState.showGrid = options.enabled
   }
   // 可以更新网格的其他属性，如cellSize等
   if (options.cellSize !== undefined && gridHelper) {
@@ -575,7 +557,7 @@ const handleGridOptionsUpdate = (options: any) => {
 // 处理坐标轴选项更新
 const handleAxesOptionsUpdate = (options: any) => {
   if (options.enabled !== undefined) {
-    showAxes.value = options.enabled
+    rvizStore.sceneState.showAxes = options.enabled
   }
   // 可以更新坐标轴的其他属性，如length、radius等
   if (options.length !== undefined && axesHelper) {
@@ -677,14 +659,14 @@ const updateFPS = () => {
 
   if (delta >= 1000) {
     // 由于我们限制了渲染频率，这里显示目标FPS而不是实际的requestAnimationFrame频率
-    fps.value = targetFPS
+    rvizStore.sceneState.fps = targetFPS
     frameCount = 0
     lastTime = currentTime
   }
 }
 
 const updateCameraPos = () => {
-  cameraPos.value = {
+  rvizStore.sceneState.cameraPos = {
     x: camera.position.x,
     y: camera.position.y,
     z: camera.position.z
@@ -702,7 +684,7 @@ const animate = (currentTime: number = 0) => {
     controls.update()
 
     // 更新机器人旋转（演示动画）
-    if (robotGroup && showRobot.value) {
+    if (robotGroup && rvizStore.sceneState.showRobot) {
       robotGroup.rotation.y += 0.01
     }
 
@@ -719,27 +701,40 @@ const animate = (currentTime: number = 0) => {
 }
 
 // 监听器
-watch(showRobot, (val: boolean) => {
+watch(() => rvizStore.sceneState.showRobot, (val: boolean) => {
   if (robotGroup) {
     robotGroup.visible = val
   }
 })
 
-watch(showMap, (val: boolean) => {
+watch(() => rvizStore.sceneState.showMap, (val: boolean) => {
   if (mapMesh) {
     mapMesh.visible = val
   }
 })
 
-watch(showPath, (val: boolean) => {
+watch(() => rvizStore.sceneState.showPath, (val: boolean) => {
   if (pathLine) {
     pathLine.visible = val
   }
 })
 
-watch(backgroundColor, (val: string) => {
+watch(() => rvizStore.sceneState.backgroundColor, (val: string) => {
   if (scene) {
     scene.background = new THREE.Color(val)
+  }
+})
+
+// 监听网格和坐标轴显示状态
+watch(() => rvizStore.sceneState.showGrid, (val: boolean) => {
+  if (gridHelper) {
+    gridHelper.visible = val
+  }
+})
+
+watch(() => rvizStore.sceneState.showAxes, (val: boolean) => {
+  if (axesHelper) {
+    axesHelper.visible = val
   }
 })
 
@@ -810,8 +805,13 @@ onUnmounted(() => {
     renderer.dispose()
   }
 
-  if (containerRef.value && renderer) {
-    containerRef.value.removeChild(renderer.domElement)
+  // 安全地移除renderer的DOM元素
+  if (containerRef.value && renderer && renderer.domElement && renderer.domElement.parentNode === containerRef.value) {
+    try {
+      containerRef.value.removeChild(renderer.domElement)
+    } catch (error) {
+      console.warn('Failed to remove renderer DOM element:', error)
+    }
   }
 })
 </script>

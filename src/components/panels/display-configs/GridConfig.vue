@@ -136,13 +136,16 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRvizStore } from '@/stores/rviz'
 import { ArrowRight } from '@element-plus/icons-vue'
 
 interface Props {
+  componentId: string
   options: Record<string, any>
 }
 
 const props = defineProps<Props>()
+const rvizStore = useRvizStore()
 
 const offsetExpanded = ref(false)
 
@@ -161,12 +164,8 @@ const toggleOffset = () => {
 }
 
 const update = (key: string, value: any) => {
-  emit('update', { [key]: value })
+  rvizStore.updateComponentOptions(props.componentId, { [key]: value })
 }
-
-defineEmits<{
-  update: [options: Record<string, any>]
-}>()
 </script>
 
 <style scoped>
