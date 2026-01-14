@@ -808,6 +808,37 @@ watch(() => {
   updateAxesHelper()
 }, { deep: true })
 
+// 监听displayComponents的变化，确保删除组件时同步隐藏3D对象
+watch(() => rvizStore.displayComponents, (newComponents) => {
+  // 检查各种组件是否存在且启用
+  const hasGrid = newComponents.some(c => c.type === 'grid' && c.enabled)
+  const hasAxes = newComponents.some(c => c.type === 'axes' && c.enabled)
+  const hasMap = newComponents.some(c => c.type === 'map' && c.enabled)
+  const hasPath = newComponents.some(c => c.type === 'path' && c.enabled)
+  const hasLaser = newComponents.some(c => c.type === 'laserscan' && c.enabled)
+
+  // 根据组件存在情况设置可见性
+  if (gridHelper) {
+    gridHelper.visible = hasGrid
+  }
+  if (axesHelper) {
+    axesHelper.visible = hasAxes
+  }
+  if (mapMesh) {
+    mapMesh.visible = hasMap
+  }
+  if (pathLine) {
+    pathLine.visible = hasPath
+  }
+
+  // 更新sceneState以保持同步（只更新通过display组件控制的属性）
+  rvizStore.sceneState.showGrid = hasGrid
+  rvizStore.sceneState.showAxes = hasAxes
+  rvizStore.sceneState.showMap = hasMap
+  rvizStore.sceneState.showPath = hasPath
+  rvizStore.sceneState.showLaser = hasLaser
+}, { deep: true, immediate: true })
+
 // 监听面板变化，当面板显示/隐藏时触发resize
 watch(() => rvizStore.panelConfig.enabledPanels, (newPanels) => {
   // 如果面板被隐藏，恢复viewer-container为100%宽度

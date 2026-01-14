@@ -191,14 +191,14 @@ export const useRvizStore = defineStore('rviz', () => {
 
   // 删除组件
   const removeComponent = (componentId: string) => {
-    const index = displayComponents.value.findIndex(c => c.id === componentId)
-    if (index !== -1) {
-      displayComponents.value.splice(index, 1)
+    const component = displayComponents.value.find(c => c.id === componentId)
+    if (component) {
+      displayComponents.value.splice(displayComponents.value.indexOf(component), 1)
       if (selectedItem.value === componentId) {
         selectedItem.value = ''
       }
-      // 同步到sceneState
-      syncComponentRemoval(componentId)
+      // 同步到sceneState - 设置为false
+      syncComponentToScene({ ...component, enabled: false })
       saveComponents()
     }
   }
@@ -258,13 +258,6 @@ export const useRvizStore = defineStore('rviz', () => {
     }
   }
 
-  // 同步组件删除到3D场景
-  const syncComponentRemoval = (componentId: string) => {
-    const component = displayComponents.value.find(c => c.id === componentId)
-    if (component) {
-      syncComponentToScene({ ...component, enabled: false })
-    }
-  }
 
   // 更新全局选项
   const updateGlobalOptions = (options: Partial<GlobalOptions>) => {
