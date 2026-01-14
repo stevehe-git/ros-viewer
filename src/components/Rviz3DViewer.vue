@@ -116,7 +116,7 @@ let lastRenderTime = 0
 
 // 3D对象
 let gridHelper: THREE.GridHelper
-let axesHelper: THREE.AxesHelper
+let axesHelper: THREE.Group
 let robotGroup: THREE.Group
 let mapMesh: THREE.Mesh
 let pathLine: THREE.Line
@@ -278,12 +278,42 @@ const updateAxesHelper = () => {
 
   // 使用配置选项创建坐标轴
   const length = options.length || 1
-  axesHelper = new THREE.AxesHelper(length)
+  const radius = options.radius || 0.01 // 默认半径
+
+  // 创建自定义坐标轴，支持设置半径
+  axesHelper = new THREE.Group()
+
+  // X轴 (红色) - 从原点到(length, 0, 0)
+  const xGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
+  const xMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 })
+  const xAxis = new THREE.Mesh(xGeometry, xMaterial)
+  xAxis.rotation.z = -Math.PI / 2 // 旋转到X轴方向
+  xAxis.position.x = length / 2
+  axesHelper.add(xAxis)
+
+  // Y轴 (绿色) - 从原点到(0, length, 0)
+  const yGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
+  const yMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+  const yAxis = new THREE.Mesh(yGeometry, yMaterial)
+  yAxis.position.y = length / 2
+  axesHelper.add(yAxis)
+
+  // Z轴 (蓝色) - 从原点到(0, 0, length)
+  const zGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
+  const zMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff })
+  const zAxis = new THREE.Mesh(zGeometry, zMaterial)
+  zAxis.rotation.x = Math.PI / 2 // 旋转到Z轴方向
+  zAxis.position.z = length / 2
+  axesHelper.add(zAxis)
 
   // 设置透明度
   if (options.alpha !== undefined) {
-    axesHelper.material.transparent = true
-    axesHelper.material.opacity = options.alpha
+    axesHelper.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        child.material.transparent = true
+        child.material.opacity = options.alpha
+      }
+    })
   }
 
   scene.add(axesHelper)
@@ -624,12 +654,8 @@ const handleAxesOptionsUpdate = (options: any) => {
   if (options.enabled !== undefined) {
     rvizStore.sceneState.showAxes = options.enabled
   }
-  // 可以更新坐标轴的其他属性，如length、radius等
-  if (options.length !== undefined && axesHelper) {
-    scene.remove(axesHelper)
-    axesHelper = new THREE.AxesHelper(options.length)
-    scene.add(axesHelper)
-  }
+  // 重新创建坐标轴以应用所有选项变化
+  updateAxesHelper()
 }
 
 // 处理添加显示项
