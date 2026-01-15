@@ -44,11 +44,12 @@ const panelTitle = computed(() => {
 })
 
 // 使用统一的话题订阅管理器
+// 注意：camera 和 image 类型都使用 sensor_msgs/Image 消息类型
 const {
   getLatestMessage
 } = useTopicSubscription(
   props.componentId,
-  'image', // 组件类型
+  'camera', // 组件类型（camera 和 image 都使用相同的消息类型）
   props.topic,
   1 // 只保留最新的一帧
 )
@@ -186,16 +187,36 @@ const convertImageMessageToDataURL = (message: any): string => {
 
 // 监听最新消息，转换为图像URL
 watch(() => getLatestMessage(), (message) => {
+  console.log('ImageViewerPanel: Latest message received', {
+    componentId: props.componentId,
+    topic: props.topic,
+    hasMessage: !!message,
+    messageType: message ? typeof message : 'null'
+  })
+  
   if (message) {
+    console.log('ImageViewerPanel: Converting message to image URL', {
+      width: message.width,
+      height: message.height,
+      encoding: message.encoding,
+      dataType: typeof message.data,
+      dataLength: message.data?.length
+    })
+    
     const dataUrl = convertImageMessageToDataURL(message)
     if (dataUrl) {
+      console.log('ImageViewerPanel: Image URL created successfully', dataUrl.substring(0, 50) + '...')
       imageUrl.value = dataUrl
+    } else {
+      console.warn('ImageViewerPanel: Failed to convert message to image URL')
+      imageUrl.value = ''
+      imageInfo.value = null
     }
   } else {
     imageUrl.value = ''
     imageInfo.value = null
   }
-}, { immediate: true })
+}, { immediate: true, deep: true })
 
 const handleImageError = () => {
   console.error('Failed to load image')

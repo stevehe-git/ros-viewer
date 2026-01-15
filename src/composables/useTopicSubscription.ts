@@ -48,10 +48,12 @@ export function useTopicSubscription(
     rvizStore.unsubscribeComponentTopic(componentId)
   }
   
-  // 获取最新消息（从统一管理器获取）
-  const getLatestMessage = (): any | null => {
+  // 获取最新消息（从统一管理器获取，使用响应式追踪）
+  const getLatestMessage = computed(() => {
+    // 访问触发器以确保响应式追踪
+    statusUpdateTrigger.value
     return topicSubscriptionManager.getLatestMessage(componentId)
-  }
+  })
   
   // 获取所有缓存的消息（从统一管理器获取）
   const getAllMessages = (): CachedMessage[] => {
@@ -102,7 +104,7 @@ export function useTopicSubscription(
     messageQueue,
     subscribe,
     unsubscribe,
-    getLatestMessage,
+    getLatestMessage: () => getLatestMessage.value, // 返回函数以保持API兼容
     getAllMessages,
     clearCache
   }

@@ -205,7 +205,7 @@ watch(() => getLatestMessage(), (message) => {
     // 组件禁用时清除数据
     rvizStore.clearComponentData(props.component.id)
   }
-}, { immediate: true })
+}, { immediate: true, deep: true })
 
 // 获取状态文本
 const getStatusText = (): string => {

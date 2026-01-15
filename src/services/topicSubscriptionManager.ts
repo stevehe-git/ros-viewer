@@ -328,6 +328,8 @@ export class TopicSubscriptionManager {
    * 获取最新消息
    */
   getLatestMessage(componentId: string): any | null {
+    // 访问触发器以确保响应式追踪
+    this.statusUpdateTrigger.value
     const queue = this.messageQueues.get(componentId)
     if (!queue || queue.length === 0) {
       return null
