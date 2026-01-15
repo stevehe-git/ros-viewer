@@ -10,7 +10,7 @@
     >
       <!-- 选中的面板 -->
       <div class="active-panels">
-        <template v-for="(panelId, index) in enabledPanelsList" :key="panelId">
+        <template v-for="(panelItem, index) in allPanelsList" :key="panelItem.id">
           <!-- 插入指示线 -->
           <div
             v-if="dragOverIndex === index"
@@ -20,100 +20,85 @@
           <!-- 面板包装器 -->
           <div
             class="panel-wrapper"
-            :class="{ dragging: draggedPanelId === panelId }"
+            :class="{ dragging: draggedPanelId === panelItem.id }"
             draggable="true"
-            @dragstart="handleDragStart($event, panelId)"
+            @dragstart="handleDragStart($event, panelItem.id)"
             @dragend="handleDragEnd($event)"
           >
+            <!-- 标准面板 -->
             <ViewControlPanel
-              v-if="panelId === 'view-control'"
-        :camera-mode="rvizStore.sceneState.cameraMode"
-        :show-grid="rvizStore.sceneState.showGrid"
-        :show-axes="rvizStore.sceneState.showAxes"
-        :show-robot="rvizStore.sceneState.showRobot"
-        :show-map="rvizStore.sceneState.showMap"
-        :show-path="rvizStore.sceneState.showPath"
-        :show-laser="rvizStore.sceneState.showLaser"
-        :background-color="rvizStore.sceneState.backgroundColor"
-        :is-fullscreen="props.isFullscreen"
-        @reset-camera="$emit('resetCamera')"
-        @toggle-grid="$emit('toggleGrid')"
-        @toggle-axes="$emit('toggleAxes')"
-        @update:camera-mode="$emit('update:cameraMode', $event)"
-        @update:show-robot="$emit('update:showRobot', $event)"
-        @update:show-map="$emit('update:showMap', $event)"
-        @update:show-path="$emit('update:showPath', $event)"
-        @update:show-laser="$emit('update:showLaser', $event)"
-        @update:background-color="$emit('update:backgroundColor', $event)"
-        @toggle-fullscreen="$emit('toggleFullscreen')"
-      />
+              v-if="panelItem.id === 'view-control'"
+              :camera-mode="rvizStore.sceneState.cameraMode"
+              :show-grid="rvizStore.sceneState.showGrid"
+              :show-axes="rvizStore.sceneState.showAxes"
+              :show-robot="rvizStore.sceneState.showRobot"
+              :show-map="rvizStore.sceneState.showMap"
+              :show-path="rvizStore.sceneState.showPath"
+              :show-laser="rvizStore.sceneState.showLaser"
+              :background-color="rvizStore.sceneState.backgroundColor"
+              :is-fullscreen="props.isFullscreen"
+              @reset-camera="$emit('resetCamera')"
+              @toggle-grid="$emit('toggleGrid')"
+              @toggle-axes="$emit('toggleAxes')"
+              @update:camera-mode="$emit('update:cameraMode', $event)"
+              @update:show-robot="$emit('update:showRobot', $event)"
+              @update:show-map="$emit('update:showMap', $event)"
+              @update:show-path="$emit('update:showPath', $event)"
+              @update:show-laser="$emit('update:showLaser', $event)"
+              @update:background-color="$emit('update:backgroundColor', $event)"
+              @toggle-fullscreen="$emit('toggleFullscreen')"
+            />
 
             <SceneInfoPanel
-              v-else-if="panelId === 'scene-info'"
-        :fps="rvizStore.sceneState.fps"
-        :camera-pos="rvizStore.sceneState.cameraPos"
-        :object-count="rvizStore.sceneState.objectCount"
-        :memory-usage="rvizStore.sceneState.memoryUsage"
-        :texture-count="rvizStore.sceneState.textureCount"
-      />
+              v-else-if="panelItem.id === 'scene-info'"
+              :fps="rvizStore.sceneState.fps"
+              :camera-pos="rvizStore.sceneState.cameraPos"
+              :object-count="rvizStore.sceneState.objectCount"
+              :memory-usage="rvizStore.sceneState.memoryUsage"
+              :texture-count="rvizStore.sceneState.textureCount"
+            />
 
             <ToolPanel
-              v-else-if="panelId === 'tools'"
-        :is-recording="rvizStore.sceneState.isRecording"
-        :performance-mode="rvizStore.sceneState.performanceMode"
-        :show-debug-info="rvizStore.sceneState.showDebugInfo"
-        @take-screenshot="$emit('takeScreenshot')"
-        @export-scene="$emit('exportScene')"
-        @reset-scene="$emit('resetScene')"
-        @toggle-recording="$emit('toggleRecording', $event)"
-        @toggle-performance-mode="$emit('togglePerformanceMode', $event)"
-        @toggle-debug-info="$emit('toggleDebugInfo', $event)"
-      />
+              v-else-if="panelItem.id === 'tools'"
+              :is-recording="rvizStore.sceneState.isRecording"
+              :performance-mode="rvizStore.sceneState.performanceMode"
+              :show-debug-info="rvizStore.sceneState.showDebugInfo"
+              @take-screenshot="$emit('takeScreenshot')"
+              @export-scene="$emit('exportScene')"
+              @reset-scene="$emit('resetScene')"
+              @toggle-recording="$emit('toggleRecording', $event)"
+              @toggle-performance-mode="$emit('togglePerformanceMode', $event)"
+              @toggle-debug-info="$emit('toggleDebugInfo', $event)"
+            />
 
             <DisplayPanel
-              v-else-if="panelId === 'display'"
-        @update:global-options="handleGlobalOptionsUpdate"
-        @update:grid-options="handleGridOptionsUpdate"
-        @update:axes-options="handleAxesOptionsUpdate"
-        @add-display="handleAddDisplay"
-        @duplicate-display="handleDuplicateDisplay"
-        @remove-display="handleRemoveDisplay"
-        @rename-display="handleRenameDisplay"
-      />
+              v-else-if="panelItem.id === 'display'"
+              @update:global-options="handleGlobalOptionsUpdate"
+              @update:grid-options="handleGridOptionsUpdate"
+              @update:axes-options="handleAxesOptionsUpdate"
+              @add-display="handleAddDisplay"
+              @duplicate-display="handleDuplicateDisplay"
+              @remove-display="handleRemoveDisplay"
+              @rename-display="handleRenameDisplay"
+            />
 
             <RobotConnectionPanel
-              v-else-if="panelId === 'robot-connection'"
+              v-else-if="panelItem.id === 'robot-connection'"
             />
-          </div>
-        </template>
-        
-        <!-- 图像可视化面板（动态添加） -->
-        <template v-for="imageComponent in visibleImageComponents" :key="`image-${imageComponent.id}`">
-          <!-- 插入指示线 -->
-          <div
-            v-if="dragOverIndex === getImagePanelIndex(imageComponent.id)"
-            class="insert-indicator"
-          ></div>
-          
-          <!-- 面板包装器 -->
-          <div
-            class="panel-wrapper"
-            :class="{ dragging: draggedPanelId === `image-${imageComponent.id}` }"
-            draggable="true"
-            @dragstart="handleDragStart($event, `image-${imageComponent.id}`)"
-            @dragend="handleDragEnd($event)"
-          >
+
+            <!-- 图像面板 -->
             <ImageViewerPanel
-              :component-id="imageComponent.id"
-              :component-name="imageComponent.name"
-              :topic="imageComponent.options?.topic"
+              v-else-if="panelItem.type === 'image' && panelItem.componentId && panelItem.name"
+              :component-id="panelItem.componentId"
+              :component-name="panelItem.name"
+              :topic="panelItem.topic"
             />
           </div>
         </template>
         
-        <!-- 最后一个插入指示线（在所有面板和图像面板之后） -->
+        <!-- 最后一个插入指示线 -->
         <div
-          v-if="dragOverIndex === enabledPanelsList.length + visibleImageComponents.length"
+          v-if="dragOverIndex === allPanelsList.length"
           class="insert-indicator"
         ></div>
       </div>
@@ -275,9 +260,23 @@ const floatingPanels = computed(() => {
 
 // 获取需要显示图像面板的组件（camera 和 image 类型）
 const imageComponents = computed(() => {
-  return rvizStore.displayComponents.filter(
+  const allImageComponents = rvizStore.displayComponents.filter(
     component => (component.type === 'camera' || component.type === 'image') && component.enabled
   )
+  
+  // 如果有顺序配置，按照顺序排序
+  const order = rvizStore.panelConfig.imagePanelOrder || []
+  if (order.length > 0) {
+    // 按照 order 数组排序，不在 order 中的组件放在最后
+    const ordered = order
+      .map(id => allImageComponents.find(c => c.id === id))
+      .filter(c => c !== undefined) as typeof allImageComponents
+    
+    const unordered = allImageComponents.filter(c => !order.includes(c.id))
+    return [...ordered, ...unordered]
+  }
+  
+  return allImageComponents
 })
 
 // 获取可见的图像面板（排除已悬浮的）
@@ -288,12 +287,71 @@ const visibleImageComponents = computed(() => {
   )
 })
 
-// 获取图像面板在列表中的索引（用于插入指示线）
-const getImagePanelIndex = (componentId: string): number => {
-  // 图像面板在所有面板之后，所以索引是 enabledPanelsList.length + 图像面板的索引
-  const imageIndex = visibleImageComponents.value.findIndex(c => c.id === componentId)
-  return imageIndex >= 0 ? enabledPanelsList.value.length + imageIndex : -1
-}
+// 获取所有面板的统一列表（标准面板 + 图像面板）
+const allPanelsList = computed(() => {
+  type PanelItem = { id: string; type: 'standard' | 'image'; componentId?: string; name?: string; topic?: string }
+  
+  // 获取所有可见的标准面板
+  const visibleStandardPanels = enabledPanelsList.value
+  
+  // 获取所有可见的图像面板（visibleImageComponents 已经过滤了悬浮的面板）
+  const visibleImagePanels: PanelItem[] = visibleImageComponents.value.map(c => ({
+    id: `image-${c.id}`,
+    type: 'image' as const,
+    componentId: c.id,
+    name: c.name,
+    topic: c.options?.topic
+  }))
+  
+  // 获取统一顺序配置
+  const order = rvizStore.panelConfig.allPanelsOrder || []
+  
+  if (order.length > 0) {
+    // 按照顺序配置排序
+    const orderedPanels: PanelItem[] = []
+    const processedIds = new Set<string>()
+    
+    // 先添加顺序配置中的面板
+    for (const panelId of order) {
+      if (processedIds.has(panelId)) continue
+      
+      // 检查是否是标准面板
+      if (visibleStandardPanels.includes(panelId)) {
+        orderedPanels.push({ id: panelId, type: 'standard' })
+        processedIds.add(panelId)
+      }
+      // 检查是否是图像面板
+      else if (panelId.startsWith('image-')) {
+        const componentId = panelId.replace('image-', '')
+        const imagePanel = visibleImagePanels.find(p => p.componentId === componentId)
+        if (imagePanel) {
+          orderedPanels.push(imagePanel)
+          processedIds.add(panelId)
+        }
+      }
+    }
+    
+    // 添加未在顺序配置中的标准面板
+    for (const panelId of visibleStandardPanels) {
+      if (!processedIds.has(panelId)) {
+        orderedPanels.push({ id: panelId, type: 'standard' })
+      }
+    }
+    
+    // 添加未在顺序配置中的图像面板
+    for (const imagePanel of visibleImagePanels) {
+      if (!processedIds.has(imagePanel.id)) {
+        orderedPanels.push(imagePanel)
+      }
+    }
+    
+    return orderedPanels
+  }
+  
+  // 如果没有顺序配置，先显示标准面板，再显示图像面板
+  const standardPanels: PanelItem[] = visibleStandardPanels.map(id => ({ id, type: 'standard' as const }))
+  return [...standardPanels, ...visibleImagePanels]
+})
 
 // 获取图像组件的 topic
 const getImageComponentTopic = (componentId: string): string => {
@@ -337,8 +395,15 @@ const handleDragStart = (e: DragEvent, panelId: string) => {
 
 // 拖拽结束
 const handleDragEnd = (e: DragEvent) => {
+  if (!draggedPanelId.value) {
+    draggedPanelId.value = null
+    dragOverIndex.value = null
+    isDraggingFromFloating.value = false
+    return
+  }
+  
   // 如果拖拽到 PanelManager 外部（任意非 panel manager 区域），创建悬浮窗口
-  if (draggedPanelId.value && !isDraggingFromFloating.value) {
+  if (!isDraggingFromFloating.value) {
     // 检查是否在 PanelManager 区域内
     const panelManager = document.querySelector('.panel-manager') as HTMLElement
     const isOverPanelManager = panelManager && 
@@ -347,8 +412,15 @@ const handleDragEnd = (e: DragEvent) => {
       e.clientY >= panelManager.getBoundingClientRect().top &&
       e.clientY <= panelManager.getBoundingClientRect().bottom
     
+    // 如果在 PanelManager 内部且有效插入位置，重新排序
+    if (isOverPanelManager && dragOverIndex.value !== null && dragOverIndex.value >= 0) {
+      const currentIndex = allPanelsList.value.findIndex(p => p.id === draggedPanelId.value)
+      if (currentIndex >= 0 && currentIndex !== dragOverIndex.value) {
+        rvizStore.reorderAllPanels(currentIndex, dragOverIndex.value)
+      }
+    }
     // 如果不在 PanelManager 区域内，创建悬浮窗口
-    if (!isOverPanelManager || dragOverIndex.value === null) {
+    else if (!isOverPanelManager || dragOverIndex.value === null) {
       const panelManagerRect = panelManager?.getBoundingClientRect()
       // 使用鼠标位置作为初始位置（任意非 panel manager 区域）
       const x = Math.max(0, e.clientX - 50)
@@ -426,9 +498,9 @@ const handleDrop = (e: DragEvent) => {
   
   // 将面板从悬浮窗口移回
   if (isDraggingFromFloating.value) {
-    // 图像面板通过关闭悬浮状态来回到 PanelManager
+    // 图像面板通过关闭悬浮状态来回到 PanelManager，并指定插入位置
     if (draggedPanelId.value.startsWith('image-')) {
-      rvizStore.closeFloatingPanel(draggedPanelId.value)
+      rvizStore.closeFloatingPanel(draggedPanelId.value, insertIndex)
     } else {
       rvizStore.dockPanel(draggedPanelId.value, insertIndex)
     }
@@ -485,9 +557,9 @@ const handleFloatingDrag = (e: DragEvent) => {
 const handleFloatingDragEnd = () => {
   // 检查是否拖到了 PanelManager
   if (draggedPanelId.value && dragOverIndex.value !== null) {
-    // 图像面板通过关闭悬浮状态来回到 PanelManager
+    // 图像面板通过关闭悬浮状态来回到 PanelManager，并指定插入位置
     if (draggedPanelId.value.startsWith('image-')) {
-      rvizStore.closeFloatingPanel(draggedPanelId.value)
+      rvizStore.closeFloatingPanel(draggedPanelId.value, dragOverIndex.value)
     } else {
       rvizStore.dockPanel(draggedPanelId.value, dragOverIndex.value)
     }

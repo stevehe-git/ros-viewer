@@ -77,6 +77,8 @@ export interface PanelConfig {
   panelWidth: number
   isFullscreen: boolean
   floatingPanels?: FloatingPanelInfo[]
+  imagePanelOrder?: string[] // 图像面板的显示顺序（componentId 数组）
+  allPanelsOrder?: string[] // 所有面板的统一顺序（标准面板ID + image-${componentId}）
 }
 
 // 3D场景状态接口
@@ -123,7 +125,9 @@ export const useRvizStore = defineStore('rviz', () => {
     enabledPanels: ['view-control', 'scene-info', 'tools', 'display'],
     panelWidth: 300,
     isFullscreen: false,
-    floatingPanels: []
+    floatingPanels: [],
+    imagePanelOrder: [],
+    allPanelsOrder: [] // 统一的面板顺序
   })
 
   // 全局选项
@@ -259,6 +263,23 @@ export const useRvizStore = defineStore('rviz', () => {
     }
     displayComponents.value.push(component)
     selectedItem.value = componentId
+    
+    // 如果是图像组件，添加到统一顺序和 imagePanelOrder
+    if (type === 'camera' || type === 'image') {
+      if (!panelConfig.imagePanelOrder) {
+        panelConfig.imagePanelOrder = []
+      }
+      panelConfig.imagePanelOrder.push(componentId)
+      
+      // 添加到统一顺序（图像面板总是添加到末尾）
+      if (!panelConfig.allPanelsOrder) {
+        panelConfig.allPanelsOrder = []
+      }
+      panelConfig.allPanelsOrder.push(`image-${componentId}`)
+      
+      savePanelConfig()
+    }
+    
     saveComponents()
     return component
   }
@@ -294,6 +315,22 @@ export const useRvizStore = defineStore('rviz', () => {
       displayComponents.value.splice(displayComponents.value.indexOf(component), 1)
       if (selectedItem.value === componentId) {
         selectedItem.value = ''
+      }
+      // 如果是图像组件，从 imagePanelOrder 和统一顺序中移除
+      if ((component.type === 'camera' || component.type === 'image')) {
+        if (panelConfig.imagePanelOrder) {
+          const orderIndex = panelConfig.imagePanelOrder.indexOf(componentId)
+          if (orderIndex > -1) {
+            panelConfig.imagePanelOrder.splice(orderIndex, 1)
+          }
+        }
+        if (panelConfig.allPanelsOrder) {
+          const allOrderIndex = panelConfig.allPanelsOrder.indexOf(`image-${componentId}`)
+          if (allOrderIndex > -1) {
+            panelConfig.allPanelsOrder.splice(allOrderIndex, 1)
+          }
+        }
+        savePanelConfig()
       }
       // 同步到sceneState - 设置为false
       syncComponentToScene({ ...component, enabled: false })
@@ -565,10 +602,21 @@ export const useRvizStore = defineStore('rviz', () => {
       return
     }
     
-    // 从 enabledPanels 中移除
-    const index = panelConfig.enabledPanels.indexOf(panelId)
-    if (index > -1) {
-      panelConfig.enabledPanels.splice(index, 1)
+    // 从 enabledPanels 中移除（仅对标准面板）
+    if (!panelId.startsWith('image-')) {
+      const index = panelConfig.enabledPanels.indexOf(panelId)
+      if (index > -1) {
+        panelConfig.enabledPanels.splice(index, 1)
+      }
+    }
+    
+    // 从统一顺序中移除
+    if (!panelConfig.allPanelsOrder) {
+      panelConfig.allPanelsOrder = []
+    }
+    const orderIndex = panelConfig.allPanelsOrder.indexOf(panelId)
+    if (orderIndex > -1) {
+      panelConfig.allPanelsOrder.splice(orderIndex, 1)
     }
     
     // 添加到悬浮列表
@@ -593,11 +641,28 @@ export const useRvizStore = defineStore('rviz', () => {
       panelConfig.floatingPanels.splice(floatingIndex, 1)
     }
     
-    // 添加到 enabledPanels
-    if (insertIndex !== undefined && insertIndex >= 0 && insertIndex <= panelConfig.enabledPanels.length) {
-      panelConfig.enabledPanels.splice(insertIndex, 0, panelId)
-    } else {
+    // 确保统一顺序存在
+    if (!panelConfig.allPanelsOrder) {
+      panelConfig.allPanelsOrder = []
+    }
+    
+    // 从统一顺序中移除（如果存在）
+    const currentOrderIndex = panelConfig.allPanelsOrder.indexOf(panelId)
+    if (currentOrderIndex > -1) {
+      panelConfig.allPanelsOrder.splice(currentOrderIndex, 1)
+    }
+    
+    // 添加到 enabledPanels（仅对标准面板）
+    if (!panelId.startsWith('image-') && !panelConfig.enabledPanels.includes(panelId)) {
       panelConfig.enabledPanels.push(panelId)
+    }
+    
+    // 插入到统一顺序的指定位置
+    if (insertIndex !== undefined && insertIndex >= 0) {
+      panelConfig.allPanelsOrder.splice(insertIndex, 0, panelId)
+    } else {
+      // 如果没有指定位置，添加到末尾
+      panelConfig.allPanelsOrder.push(panelId)
     }
     
     savePanelConfig()
@@ -616,23 +681,79 @@ export const useRvizStore = defineStore('rviz', () => {
   }
 
   // 关闭悬浮面板
-  const closeFloatingPanel = (panelId: string) => {
+  const closeFloatingPanel = (panelId: string, insertIndex?: number) => {
     if (!panelConfig.floatingPanels) return
     
     const index = panelConfig.floatingPanels.findIndex(p => p.panelId === panelId)
     if (index > -1) {
       panelConfig.floatingPanels.splice(index, 1)
-      // 将面板重新添加到 enabledPanels（仅对标准面板，图像面板不需要）
+      
+      // 使用统一的面板顺序管理
+      if (!panelConfig.allPanelsOrder) {
+        panelConfig.allPanelsOrder = []
+      }
+      
+      // 从统一顺序中移除（如果存在）
+      const currentOrderIndex = panelConfig.allPanelsOrder.indexOf(panelId)
+      if (currentOrderIndex > -1) {
+        panelConfig.allPanelsOrder.splice(currentOrderIndex, 1)
+      }
+      
+      // 将面板重新添加到 enabledPanels（仅对标准面板）
       if (!panelId.startsWith('image-') && !panelConfig.enabledPanels.includes(panelId)) {
         panelConfig.enabledPanels.push(panelId)
       }
+      
+      // 插入到统一顺序的指定位置
+      if (insertIndex !== undefined && insertIndex >= 0) {
+        panelConfig.allPanelsOrder.splice(insertIndex, 0, panelId)
+      } else {
+        // 如果没有指定位置，添加到末尾
+        panelConfig.allPanelsOrder.push(panelId)
+      }
+      
       savePanelConfig()
     }
   }
 
+
   // 获取悬浮面板列表
   const getFloatingPanels = (): FloatingPanelInfo[] => {
     return panelConfig.floatingPanels || []
+  }
+
+  // 重新排序所有面板（用于 PanelManager 内部拖拽）
+  const reorderAllPanels = (fromIndex: number, toIndex: number) => {
+    if (!panelConfig.allPanelsOrder) {
+      panelConfig.allPanelsOrder = []
+      // 初始化：先添加标准面板，再添加图像面板
+      for (const panelId of panelConfig.enabledPanels) {
+        panelConfig.allPanelsOrder.push(panelId)
+      }
+      if (panelConfig.imagePanelOrder) {
+        for (const componentId of panelConfig.imagePanelOrder) {
+          panelConfig.allPanelsOrder.push(`image-${componentId}`)
+        }
+      }
+    }
+    
+    if (fromIndex === toIndex) return
+    if (fromIndex < 0 || fromIndex >= panelConfig.allPanelsOrder.length) return
+    if (toIndex < 0 || toIndex >= panelConfig.allPanelsOrder.length) return
+    
+    const panelId = panelConfig.allPanelsOrder[fromIndex]
+    if (!panelId) return
+    
+    // 从原位置移除
+    panelConfig.allPanelsOrder.splice(fromIndex, 1)
+    
+    // 调整目标索引（如果从前面移除，目标索引需要减1）
+    const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
+    
+    // 插入到新位置
+    panelConfig.allPanelsOrder.splice(adjustedToIndex, 0, panelId)
+    
+    savePanelConfig()
   }
 
   // 配置管理方法
@@ -689,8 +810,33 @@ export const useRvizStore = defineStore('rviz', () => {
     }
   }
 
+  // 初始化统一面板顺序（如果不存在）
+  const initAllPanelsOrder = () => {
+    if (!panelConfig.allPanelsOrder || panelConfig.allPanelsOrder.length === 0) {
+      // 从现有的 enabledPanels 和 imagePanelOrder 创建统一顺序
+      panelConfig.allPanelsOrder = []
+      
+      // 先添加标准面板
+      for (const panelId of panelConfig.enabledPanels) {
+        panelConfig.allPanelsOrder.push(panelId)
+      }
+      
+      // 再添加图像面板
+      if (panelConfig.imagePanelOrder) {
+        for (const componentId of panelConfig.imagePanelOrder) {
+          panelConfig.allPanelsOrder.push(`image-${componentId}`)
+        }
+      }
+      
+      savePanelConfig()
+    }
+  }
+
   // 初始化
   const init = () => {
+    // 初始化统一面板顺序
+    initAllPanelsOrder()
+    
     // 注册所有通信插件
     PluginRegistry.registerAll({ registerPlugin })
 
@@ -754,6 +900,7 @@ export const useRvizStore = defineStore('rviz', () => {
     updateFloatingPanelPosition,
     closeFloatingPanel,
     getFloatingPanels,
+    reorderAllPanels,
     saveCurrentConfig,
     loadSavedConfig,
     exportConfig,
