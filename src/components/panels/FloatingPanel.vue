@@ -37,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Close } from '@element-plus/icons-vue'
 
 interface Props {
@@ -55,7 +55,7 @@ const props = withDefaults(defineProps<Props>(), {
   x: 100,
   y: 100,
   width: 268,
-  height: 500,
+  height: 300,
   draggable: false
 })
 
@@ -152,11 +152,24 @@ watch(() => props.height, (newHeight) => {
 .floating-panel :deep(.base-panel) {
   width: 100%;
   margin-bottom: 0;
+  border: none;
+  box-shadow: none;
 }
 
 .floating-panel :deep(.el-card) {
   width: 100%;
   margin-bottom: 0;
+  border: none;
+  box-shadow: none;
+}
+
+/* 隐藏 BasePanel 的标题栏（在 FloatingPanel 中） */
+.floating-panel :deep(.el-card__header) {
+  display: none;
+}
+
+.floating-panel :deep(.el-card__body) {
+  padding: 0;
 }
 
 .floating-panel-header {
