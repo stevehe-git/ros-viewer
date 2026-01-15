@@ -1,179 +1,61 @@
-import { ref, watch, onUnmounted } from 'vue'
-import * as ROSLIB from 'roslib'
+import { ref, watch, onUnmounted, computed } from 'vue'
 import { useRvizStore } from '@/stores/rviz'
-
-export interface TopicSubscriptionStatus {
-  subscribed: boolean
-  hasData: boolean
-  messageCount: number
-  lastMessageTime: number | null
-  error: string | null
-}
-
-export interface CachedMessage {
-  data: any
-  timestamp: number
-}
+import { topicSubscriptionManager, type SubscriptionStatus, type CachedMessage } from '@/services/topicSubscriptionManager'
 
 /**
  * 话题订阅和数据缓存 composable
+ * 使用统一的话题订阅管理器，避免重复订阅
  */
 export function useTopicSubscription(
   componentId: string,
+  componentType: string,
   topic: string | undefined,
-  messageType: string,
   queueSize: number = 10
 ) {
-  console.log("useTopicSubscription", componentId, topic, messageType, queueSize)
   const rvizStore = useRvizStore()
   
-  // 订阅状态
-  const status = ref<TopicSubscriptionStatus>({
-    subscribed: false,
-    hasData: false,
-    messageCount: 0,
-    lastMessageTime: null,
-    error: null
-  })
-  
-  // 数据缓存队列
-  const messageQueue = ref<CachedMessage[]>([])
-  
-  // ROS 订阅者
-  let subscriber: ROSLIB.Topic<any> | null = null
-  
-  // 获取 ROS 实例
-  const getROSInstance = (): ROSLIB.Ros | null => {
-    const rosPlugin = rvizStore.getPlugin('ros')
-    if (rosPlugin) {
-      return (rosPlugin as any).getROSInstance?.() as ROSLIB.Ros | null
-    }
-    return null
-  }
-  
-  // 订阅话题
-  const subscribe = () => {
-    // 先取消旧的订阅
-    unsubscribe()
-    
-    // 检查 ROS 连接
-    const ros = getROSInstance()
-    if (!ros || !ros.isConnected) {
-      status.value = {
-        subscribed: false,
-        hasData: false,
-        messageCount: 0,
-        lastMessageTime: null,
-        error: 'ROS not connected'
-      }
-      return
-    }
-    
-    // 检查话题是否有效
-    if (!topic || topic.trim() === '') {
-      status.value = {
-        subscribed: false,
-        hasData: false,
-        messageCount: 0,
-        lastMessageTime: null,
-        error: 'Topic not specified'
-      }
-      return
-    }
-    
-    try {
-      // 创建订阅者
-      subscriber = new ROSLIB.Topic({
-        ros: ros,
-        name: topic,
-        messageType: messageType,
-        queue_size: queueSize
-      })
-      
-      // 订阅消息
-      subscriber.subscribe((message: any) => {
-        const timestamp = Date.now()
-        
-        // 添加到缓存队列
-        messageQueue.value.push({
-          data: message,
-          timestamp: timestamp
-        })
-        
-        // 保持队列大小
-        if (messageQueue.value.length > queueSize) {
-          messageQueue.value.shift() // 移除最旧的消息
-        }
-        
-        // 更新状态
-        status.value = {
-          subscribed: true,
-          hasData: true,
-          messageCount: status.value.messageCount + 1,
-          lastMessageTime: timestamp,
-          error: null
-        }
-      })
-      
-      status.value = {
-        subscribed: true,
-        hasData: false,
-        messageCount: 0,
-        lastMessageTime: null,
-        error: null
-      }
-      
-      console.log(`Subscribed to topic: ${topic} for component: ${componentId}`)
-    } catch (error: any) {
-      console.error(`Failed to subscribe to topic ${topic}:`, error)
-      status.value = {
-        subscribed: false,
-        hasData: false,
-        messageCount: 0,
-        lastMessageTime: null,
-        error: error?.message || 'Subscription failed'
-      }
-    }
-  }
-  
-  // 取消订阅
-  const unsubscribe = () => {
-    if (subscriber) {
-      try {
-        subscriber.unsubscribe()
-      } catch (error) {
-        console.error('Error unsubscribing:', error)
-      }
-      subscriber = null
-    }
-    
-    status.value = {
+  // 订阅状态（从统一管理器获取）
+  const status = computed<SubscriptionStatus>(() => {
+    return topicSubscriptionManager.getStatus(componentId) || {
       subscribed: false,
       hasData: false,
-      messageCount: status.value.messageCount,
-      lastMessageTime: status.value.lastMessageTime,
+      messageCount: 0,
+      lastMessageTime: null,
       error: null
     }
-  }
+  })
   
-  // 获取最新消息
-  const getLatestMessage = (): any | null => {
-    if (messageQueue.value.length === 0) {
-      return null
+  // 数据缓存队列（从统一管理器获取）
+  const messageQueue = computed<CachedMessage[]>(() => {
+    return topicSubscriptionManager.getAllMessages(componentId)
+  })
+  
+  // 订阅话题（使用统一管理器）
+  const subscribe = () => {
+    if (!topic || topic.trim() === '') {
+      return
     }
-    const lastMessage = messageQueue.value[messageQueue.value.length - 1]
-    return lastMessage?.data ?? null
+    rvizStore.subscribeComponentTopic(componentId, componentType, topic, queueSize)
   }
   
-  // 获取所有缓存的消息
+  // 取消订阅（使用统一管理器）
+  const unsubscribe = () => {
+    rvizStore.unsubscribeComponentTopic(componentId)
+  }
+  
+  // 获取最新消息（从统一管理器获取）
+  const getLatestMessage = (): any | null => {
+    return topicSubscriptionManager.getLatestMessage(componentId)
+  }
+  
+  // 获取所有缓存的消息（从统一管理器获取）
   const getAllMessages = (): CachedMessage[] => {
-    return [...messageQueue.value]
+    return topicSubscriptionManager.getAllMessages(componentId)
   }
   
-  // 清空缓存
+  // 清空缓存（使用统一管理器）
   const clearCache = () => {
-    messageQueue.value = []
-    status.value.hasData = false
+    topicSubscriptionManager.clearCache(componentId)
   }
   
   // 监听话题变化
@@ -188,12 +70,8 @@ export function useTopicSubscription(
   
   // 监听队列大小变化
   watch(() => queueSize, (newSize: number) => {
-    // 如果队列大小变小，移除多余的消息
-    if (messageQueue.value.length > newSize) {
-      messageQueue.value = messageQueue.value.slice(-newSize)
-    }
     // 重新订阅以应用新的队列大小
-    if (status.value.subscribed && topic && topic.trim() !== '') {
+    if (topic && topic.trim() !== '') {
       subscribe()
     }
   })

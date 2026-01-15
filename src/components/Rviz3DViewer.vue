@@ -66,8 +66,8 @@ import { useRvizStore } from '@/stores/rviz'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { MOUSE } from 'three'
-import * as ROSLIB from 'roslib'
 import PanelManager from './panels/PanelManager.vue'
+import { use3DRenderer } from '@/composables/use3DRenderer'
 
 // 使用RViz store
 const rvizStore = useRvizStore()
@@ -122,22 +122,8 @@ let robotGroup: THREE.Group
 let mapMesh: THREE.Mesh
 let pathLine: THREE.Line
 
-// ROS话题订阅
-let rosInstance: ROSLIB.Ros | null = null
-const topicSubscribers = new Map<string, ROSLIB.Topic<any>>() // componentId -> Topic订阅器
-const componentDataStatus = new Map<string, boolean>() // 存储组件是否有数据
-const componentData = new Map<string, any>() // 存储组件的数据
-
-// 组件类型到消息类型的映射
-const COMPONENT_MESSAGE_TYPES: Record<string, string> = {
-  map: 'nav_msgs/OccupancyGrid',
-  path: 'nav_msgs/Path',
-  laserscan: 'sensor_msgs/LaserScan',
-  pointcloud2: 'sensor_msgs/PointCloud2',
-  marker: 'visualization_msgs/Marker',
-  image: 'sensor_msgs/Image',
-  camera: 'sensor_msgs/Image'
-}
+// 使用 3D 渲染器 composable（在场景初始化后设置）
+let renderer3D: ReturnType<typeof use3DRenderer> | null = null
 
 // 性能监控
 let lastTime = performance.now()
@@ -195,6 +181,14 @@ const initScene = () => {
 
   // 创建路径
   createPath()
+
+  // 初始化 3D 渲染器
+  renderer3D = use3DRenderer(scene)
+  // 将创建的网格对象传递给渲染器
+  if (renderer3D) {
+    renderer3D.renderObjects.value.mapMesh = mapMesh
+    renderer3D.renderObjects.value.pathLine = pathLine
+  }
 
   // 添加灯光
   const ambientLight = new THREE.AmbientLight(0x404040, 0.6)
@@ -848,121 +842,12 @@ watch(() => {
   updateAxesHelper()
 }, { deep: true })
 
-// 获取ROS实例
-const getROSInstance = (): ROSLIB.Ros | null => {
-  if (!rosInstance) {
-    const rosPlugin = rvizStore.getPlugin('ros')
-    if (rosPlugin) {
-      rosInstance = (rosPlugin as any).getROSInstance?.() as ROSLIB.Ros | null
-    }
-  }
-  return rosInstance
-}
-
 // 检查topic是否有效
 const isValidTopic = (topic: string | undefined): boolean => {
   return !!(topic && topic.trim() !== '' && topic !== '<Fixed Frame>')
 }
 
-// 检查数据是否有效
-const isValidData = (message: any, componentType: string): boolean => {
-  if (!message) return false
-
-  switch (componentType) {
-    case 'map':
-      return !!(message.info && message.data && message.data.length > 0)
-    case 'path':
-      return !!(message.poses && message.poses.length > 0)
-    case 'laserscan':
-      return !!(message.ranges && message.ranges.length > 0)
-    case 'pointcloud2':
-      return !!(message.data && message.data.length > 0)
-    case 'marker':
-      return true // marker消息总是有效的
-    case 'image':
-    case 'camera':
-      return !!(message.data && message.data.length > 0)
-    default:
-      return true
-  }
-}
-
-// 订阅组件的topic
-const subscribeComponentTopic = (component: any) => {
-  const componentId = component.id
-  const componentType = component.type
-
-  // 先取消旧的订阅
-  unsubscribeComponentTopic(componentId)
-
-  // 获取ROS实例
-  const ros = getROSInstance()
-  if (!ros || !ros.isConnected) {
-    return
-  }
-
-  const topic = component.options?.topic
-  console.log("topic", topic)
-  if (!isValidTopic(topic)) {
-    componentDataStatus.set(componentId, false)
-    componentData.delete(componentId)
-    updateComponentVisibility(componentId, componentType)
-    return
-  }
-
-  // 获取消息类型
-  const messageType = COMPONENT_MESSAGE_TYPES[componentType]
-  if (!messageType) {
-    console.warn(`Unknown message type for component type: ${componentType}`)
-    return
-  }
-
-  // 订阅话题
-  try {
-    const subscriber = new ROSLIB.Topic({
-      ros: ros,
-      name: topic,
-      messageType: messageType,
-      queue_size: component.options?.queueSize || 10
-    })
-
-    subscriber.subscribe((message: any) => {
-      console.log("message", message);
-      // 检查数据是否有效
-      const hasData = isValidData(message, componentType)
-      componentDataStatus.set(componentId, hasData)
-      
-      if (hasData) {
-        componentData.set(componentId, message)
-      } else {
-        componentData.delete(componentId)
-      }
-      
-      // 更新组件显示状态
-      updateComponentVisibility(componentId, componentType)
-    })
-
-    topicSubscribers.set(componentId, subscriber)
-    console.log(`Subscribed to topic: ${topic} for component: ${component.name} (${componentType})`)
-  } catch (error) {
-    console.error(`Failed to subscribe to topic ${topic} for component ${component.name}:`, error)
-    componentDataStatus.set(componentId, false)
-    componentData.delete(componentId)
-  }
-}
-
-// 取消订阅组件的topic
-const unsubscribeComponentTopic = (componentId: string) => {
-  const subscriber = topicSubscribers.get(componentId)
-  if (subscriber) {
-    subscriber.unsubscribe()
-    topicSubscribers.delete(componentId)
-    componentDataStatus.delete(componentId)
-    componentData.delete(componentId)
-  }
-}
-
-// 更新组件可见性
+// 更新组件可见性（从 store 获取数据）
 const updateComponentVisibility = (componentId: string, componentType: string) => {
   const component = rvizStore.displayComponents.find(c => c.id === componentId)
   if (!component || !component.enabled) {
@@ -971,21 +856,31 @@ const updateComponentVisibility = (componentId: string, componentType: string) =
 
   const topic = component.options?.topic
   const hasValidTopic = isValidTopic(topic)
-  const hasData = componentDataStatus.get(componentId) || false
+  
+  // 从统一订阅管理器获取状态
+  const status = rvizStore.getComponentSubscriptionStatus(componentId)
+  const hasData = status?.hasData || false
 
-  // 根据组件类型更新可见性
+  const visible = hasValidTopic && hasData
+
+  // 使用 3D 渲染器设置可见性
+  if (renderer3D) {
+    renderer3D.setComponentVisibility(componentType, visible)
+  }
+
+  // 根据组件类型更新 sceneState
   switch (componentType) {
     case 'map':
       if (mapMesh) {
-        mapMesh.visible = hasValidTopic && hasData
-        rvizStore.sceneState.showMap = hasValidTopic && hasData
+        mapMesh.visible = visible
       }
+      rvizStore.sceneState.showMap = visible
       break
     case 'path':
       if (pathLine) {
-        pathLine.visible = hasValidTopic && hasData
-        rvizStore.sceneState.showPath = hasValidTopic && hasData
+        pathLine.visible = visible
       }
+      rvizStore.sceneState.showPath = visible
       break
     // 其他组件类型的可视化可以在这里添加
     default:
@@ -994,47 +889,39 @@ const updateComponentVisibility = (componentId: string, componentType: string) =
 }
 
 
-// 监听displayComponents的变化，自动订阅所有配置了topic的组件
+// 监听displayComponents的变化，使用统一订阅管理器订阅话题
 watch(() => rvizStore.displayComponents, (newComponents) => {
   // 检查各种组件是否存在且启用（不依赖topic的组件）
   const hasGrid = newComponents.some(c => c.type === 'grid' && c.enabled)
   const hasAxes = newComponents.some(c => c.type === 'axes' && c.enabled)
 
-  // 获取当前已订阅的组件ID
-  const currentSubscribedIds = new Set(topicSubscribers.keys())
-  const newComponentIds = new Set<string>()
-
-  // 遍历所有组件，订阅配置了topic的组件
+  // 遍历所有组件，订阅配置了topic的组件（使用统一订阅管理器）
   newComponents.forEach((component) => {
     // 跳过不需要topic的组件类型
     if (component.type === 'grid' || component.type === 'axes') {
       return
     }
 
-    newComponentIds.add(component.id)
-
     // 如果组件启用且有有效的topic，则订阅
     if (component.enabled) {
       const topic = component.options?.topic
       if (isValidTopic(topic) && rvizStore.robotConnection.connected) {
-        // 订阅topic（subscribeComponentTopic内部会处理重复订阅的情况）
-        subscribeComponentTopic(component)
+        // 使用统一订阅管理器订阅
+        rvizStore.subscribeComponentTopic(
+          component.id,
+          component.type,
+          topic,
+          component.options?.queueSize || 10
+        )
       } else {
         // topic无效或未连接，取消订阅
-        unsubscribeComponentTopic(component.id)
+        rvizStore.unsubscribeComponentTopic(component.id)
         updateComponentVisibility(component.id, component.type)
       }
     } else {
       // 组件被禁用，取消订阅
-      unsubscribeComponentTopic(component.id)
+      rvizStore.unsubscribeComponentTopic(component.id)
       updateComponentVisibility(component.id, component.type)
-    }
-  })
-
-  // 取消订阅已删除的组件
-  currentSubscribedIds.forEach((componentId) => {
-    if (!newComponentIds.has(componentId)) {
-      unsubscribeComponentTopic(componentId)
     }
   })
 
@@ -1051,27 +938,25 @@ watch(() => rvizStore.displayComponents, (newComponents) => {
   rvizStore.sceneState.showAxes = hasAxes
 }, { deep: true, immediate: true })
 
-// 监听连接状态，当连接时重新订阅所有组件
+// 监听连接状态，当连接时重新订阅所有组件（使用统一订阅管理器）
 watch(() => rvizStore.robotConnection.connected, (connected) => {
   if (connected) {
     // 延迟一点确保连接稳定
     setTimeout(() => {
-      // 重新订阅所有启用的组件
-      console.log(rvizStore.displayComponents)
+      // 重新订阅所有启用的组件（使用统一订阅管理器）
       rvizStore.displayComponents.forEach((component) => {
         if (component.enabled && isValidTopic(component.options?.topic)) {
-          subscribeComponentTopic(component)
+          rvizStore.subscribeComponentTopic(
+            component.id,
+            component.type,
+            component.options?.topic,
+            component.options?.queueSize || 10
+          )
         }
       })
     }, 500)
   } else {
-    // 断开连接时取消所有订阅
-    topicSubscribers.forEach((subscriber) => {
-      subscriber.unsubscribe()
-    })
-    topicSubscribers.clear()
-    componentDataStatus.clear()
-    componentData.clear()
+    // 断开连接时，统一订阅管理器会自动处理取消订阅
     
     // 隐藏所有依赖数据的组件
     if (mapMesh) {
@@ -1107,16 +992,32 @@ onMounted(() => {
   initScene()
 })
 
-onUnmounted(() => {
-  // 清理所有ROS订阅
-  topicSubscribers.forEach((subscriber) => {
-    subscriber.unsubscribe()
-  })
-  topicSubscribers.clear()
-  componentDataStatus.clear()
-  componentData.clear()
+// 监听组件数据变化，更新 3D 渲染
+watch(() => rvizStore.componentDataCache, () => {
+  if (!renderer3D) return
 
-  // 清理资源
+  // 遍历所有组件，检查数据变化并更新渲染
+  rvizStore.displayComponents.forEach((component) => {
+    const data = rvizStore.getComponentData(component.id)
+    const subscriptionStatus = rvizStore.getComponentSubscriptionStatus(component.id)
+    
+    if (data && subscriptionStatus?.hasData && renderer3D) {
+      // 使用 3D 渲染器更新渲染
+      renderer3D.updateComponentRender(component.id, component.type, data)
+      // 更新可见性
+      updateComponentVisibility(component.id, component.type)
+    } else if (renderer3D) {
+      // 没有数据时隐藏
+      renderer3D.setComponentVisibility(component.type, false)
+    }
+  })
+}, { deep: true })
+
+onUnmounted(() => {
+  // 清理 3D 渲染器
+  renderer3D?.cleanup()
+
+  // 清理资源（订阅由统一管理器处理）
   if (animationId) {
     cancelAnimationFrame(animationId)
   }

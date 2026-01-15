@@ -158,7 +158,7 @@ const needsTopic = computed(() => {
   return ['map', 'path', 'laserscan', 'pointcloud2', 'marker', 'image', 'camera'].includes(props.component.type)
 })
 
-// 使用话题订阅 composable
+// 使用话题订阅 composable（使用统一的话题订阅管理器）
 const {
   status: subscriptionStatus,
   messageQueue,
@@ -167,8 +167,8 @@ const {
   unsubscribe
 } = useTopicSubscription(
   props.component.id,
+  props.component.type,
   props.component.options?.topic,
-  messageType.value,
   props.component.options?.queueSize || 10
 )
 

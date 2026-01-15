@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
 import { PluginRegistry } from '@/plugins/communication'
+import { topicSubscriptionManager } from '@/services/topicSubscriptionManager'
 
 // Display组件配置接口
 export interface DisplayComponentData {
@@ -171,12 +172,34 @@ export const useRvizStore = defineStore('rviz', () => {
 
   // 获取组件数据
   const getComponentData = (componentId: string): any | null => {
+    // 优先从统一订阅管理器获取最新数据
+    const latestMessage = topicSubscriptionManager.getLatestMessage(componentId)
+    if (latestMessage) {
+      return latestMessage
+    }
+    // 回退到缓存
     return componentDataCache.value.get(componentId) || null
   }
 
   // 清除组件数据
   const clearComponentData = (componentId: string) => {
     componentDataCache.value.delete(componentId)
+    topicSubscriptionManager.clearCache(componentId)
+  }
+
+  // 订阅组件话题（统一管理）
+  const subscribeComponentTopic = (componentId: string, componentType: string, topic: string | undefined, queueSize: number = 10): boolean => {
+    return topicSubscriptionManager.subscribe(componentId, componentType, topic, queueSize)
+  }
+
+  // 取消订阅组件话题
+  const unsubscribeComponentTopic = (componentId: string) => {
+    topicSubscriptionManager.unsubscribe(componentId)
+  }
+
+  // 获取组件订阅状态
+  const getComponentSubscriptionStatus = (componentId: string) => {
+    return topicSubscriptionManager.getStatus(componentId)
   }
 
   // 默认配置选项
@@ -503,7 +526,12 @@ export const useRvizStore = defineStore('rviz', () => {
   }
 
   const getPlugin = (pluginId: string): CommunicationPlugin | null => {
-    return communicationPlugins.value.get(pluginId) || null
+    const plugin = communicationPlugins.value.get(pluginId) || null
+    // 更新话题订阅管理器的 ROS 插件
+    if (pluginId === 'ros') {
+      topicSubscriptionManager.setROSPlugin(plugin)
+    }
+    return plugin
   }
 
   const updateAvailablePlugins = () => {
@@ -535,6 +563,11 @@ export const useRvizStore = defineStore('rviz', () => {
 
       robotConnection.connected = true
 
+      // 更新话题订阅管理器的 ROS 插件
+      if (protocol === 'ros') {
+        topicSubscriptionManager.setROSPlugin(currentPlugin)
+      }
+
       return true
     } catch (error) {
       console.error('Robot connection failed:', error)
@@ -552,6 +585,11 @@ export const useRvizStore = defineStore('rviz', () => {
       }
 
       robotConnection.connected = false
+
+      // 断开连接时取消所有订阅
+      topicSubscriptionManager.unsubscribeAll()
+      topicSubscriptionManager.clearAllCache()
+      topicSubscriptionManager.setROSPlugin(null)
     } catch (error) {
       console.error('Robot disconnection failed:', error)
     }
@@ -880,6 +918,9 @@ export const useRvizStore = defineStore('rviz', () => {
     updateComponentData,
     getComponentData,
     clearComponentData,
+    subscribeComponentTopic,
+    unsubscribeComponentTopic,
+    getComponentSubscriptionStatus,
     removeComponent,
     renameComponent,
     duplicateComponent,
