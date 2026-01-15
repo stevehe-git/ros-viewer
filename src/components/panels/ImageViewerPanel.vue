@@ -23,7 +23,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { Picture } from '@element-plus/icons-vue'
 import { useTopicSubscription } from '@/composables/useTopicSubscription'
 import BasePanel from './BasePanel.vue'
@@ -185,43 +185,54 @@ const convertImageMessageToDataURL = (message: any): string => {
   }
 }
 
-// 监听最新消息，转换为图像URL
+// 节流更新图像（每33ms最多更新一次，约30fps，避免CPU过高）
+let imageUpdateTimer: ReturnType<typeof setTimeout> | null = null
+let pendingMessage: any = null
+
+// 监听最新消息，转换为图像URL（使用节流）
 watch(() => getLatestMessage(), (message) => {
-  console.log('ImageViewerPanel: Latest message received', {
-    componentId: props.componentId,
-    topic: props.topic,
-    hasMessage: !!message,
-    messageType: message ? typeof message : 'null'
-  })
+  // 保存最新消息
+  pendingMessage = message
   
-  if (message) {
-    console.log('ImageViewerPanel: Converting message to image URL', {
-      width: message.width,
-      height: message.height,
-      encoding: message.encoding,
-      dataType: typeof message.data,
-      dataLength: message.data?.length
-    })
+  // 如果已经有待处理的更新，跳过
+  if (imageUpdateTimer !== null) {
+    return
+  }
+  
+  // 节流：每33ms最多更新一次（约30fps）
+  imageUpdateTimer = setTimeout(() => {
+    const msg = pendingMessage
     
-    const dataUrl = convertImageMessageToDataURL(message)
-    if (dataUrl) {
-      console.log('ImageViewerPanel: Image URL created successfully', dataUrl.substring(0, 50) + '...')
-      imageUrl.value = dataUrl
+    if (msg) {
+      const dataUrl = convertImageMessageToDataURL(msg)
+      if (dataUrl) {
+        imageUrl.value = dataUrl
+      } else {
+        imageUrl.value = ''
+        imageInfo.value = null
+      }
     } else {
-      console.warn('ImageViewerPanel: Failed to convert message to image URL')
       imageUrl.value = ''
       imageInfo.value = null
     }
-  } else {
-    imageUrl.value = ''
-    imageInfo.value = null
-  }
-}, { immediate: true, deep: true })
+    
+    imageUpdateTimer = null
+    pendingMessage = null
+  }, 40) // 约25fps
+}, { immediate: true })
 
 const handleImageError = () => {
   console.error('Failed to load image')
   imageUrl.value = ''
 }
+
+// 清理定时器
+onUnmounted(() => {
+  if (imageUpdateTimer) {
+    clearTimeout(imageUpdateTimer)
+    imageUpdateTimer = null
+  }
+})
 </script>
 
 <style scoped>

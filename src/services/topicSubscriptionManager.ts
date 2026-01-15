@@ -28,6 +28,9 @@ export class TopicSubscriptionManager {
   private statuses = new Map<string, SubscriptionStatus>()
   // 使用响应式 ref 来触发状态更新通知
   private statusUpdateTrigger = ref(0)
+  // 节流：状态更新节流器（每100ms最多更新一次）
+  private statusUpdateThrottleTimer: number | null = null
+  private pendingStatusUpdate = false
   private rosInstance: ROSLIB.Ros | null = null
   private rosPlugin: CommunicationPlugin | null = null
 
@@ -109,6 +112,23 @@ export class TopicSubscriptionManager {
   }
 
   /**
+   * 节流触发状态更新（避免频繁更新导致CPU过高）
+   */
+  private triggerStatusUpdateThrottled() {
+    this.pendingStatusUpdate = true
+    
+    if (this.statusUpdateThrottleTimer === null) {
+      this.statusUpdateThrottleTimer = window.setTimeout(() => {
+        if (this.pendingStatusUpdate) {
+          this.statusUpdateTrigger.value++
+          this.pendingStatusUpdate = false
+        }
+        this.statusUpdateThrottleTimer = null
+      }, 200) // 每100ms最多更新一次
+    }
+  }
+
+  /**
    * 订阅话题
    */
   subscribe(
@@ -129,7 +149,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: 'Topic not specified'
       })
-      this.statusUpdateTrigger.value++
+      this.triggerStatusUpdateThrottled()
       return false
     }
 
@@ -146,7 +166,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: 'ROS plugin not set'
       })
-      this.statusUpdateTrigger.value++
+      this.triggerStatusUpdateThrottled()
       console.warn(`TopicSubscriptionManager: ROS plugin not set for component ${componentId}, subscription will be retried`)
       return false
     }
@@ -160,7 +180,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: 'ROS instance not available'
       })
-      this.statusUpdateTrigger.value++
+      this.triggerStatusUpdateThrottled()
       return false
     }
 
@@ -181,7 +201,7 @@ export class TopicSubscriptionManager {
           lastMessageTime: null,
           error: 'Could not verify ROS connection'
         })
-        this.statusUpdateTrigger.value++
+        this.triggerStatusUpdateThrottled()
         return false
       }
     }
@@ -194,7 +214,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: 'ROS not connected'
       })
-      this.statusUpdateTrigger.value++
+      this.triggerStatusUpdateThrottled()
       return false
     }
 
@@ -208,7 +228,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: `Unknown message type for component type: ${componentType}`
       })
-      this.statusUpdateTrigger.value++
+      this.triggerStatusUpdateThrottled()
       return false
     }
 
@@ -252,8 +272,8 @@ export class TopicSubscriptionManager {
           error: null
         })
         
-        // 触发响应式更新（让 Vue 知道状态已改变）
-        this.statusUpdateTrigger.value++
+        // 节流触发响应式更新（每100ms最多更新一次，避免CPU过高）
+        this.triggerStatusUpdateThrottled()
 
         // 如果数据有效，添加到缓存队列
         if (hasData) {
@@ -281,7 +301,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: null
       })
-      this.statusUpdateTrigger.value++
+      this.triggerStatusUpdateThrottled()
 
       console.log(`Subscribed to topic: ${topic} for component: ${componentId} (${componentType})`)
       return true
@@ -294,7 +314,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: error?.message || 'Subscription failed'
       })
-      this.statusUpdateTrigger.value++
+      this.triggerStatusUpdateThrottled()
       return false
     }
   }
@@ -320,7 +340,7 @@ export class TopicSubscriptionManager {
         ...currentStatus,
         subscribed: false
       })
-      this.statusUpdateTrigger.value++
+      this.triggerStatusUpdateThrottled()
     }
   }
 
@@ -361,6 +381,17 @@ export class TopicSubscriptionManager {
   }
 
   /**
+   * 清理资源（取消所有定时器）
+   */
+  cleanup() {
+    if (this.statusUpdateThrottleTimer !== null) {
+      clearTimeout(this.statusUpdateThrottleTimer)
+      this.statusUpdateThrottleTimer = null
+    }
+    this.pendingStatusUpdate = false
+  }
+
+  /**
    * 清空缓存
    */
   clearCache(componentId: string): void {
@@ -374,7 +405,7 @@ export class TopicSubscriptionManager {
         ...status,
         hasData: false
       })
-      this.statusUpdateTrigger.value++
+      this.triggerStatusUpdateThrottled()
     }
   }
 
