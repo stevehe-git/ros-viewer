@@ -95,7 +95,8 @@ import {
   Picture,
   DataLine,
   Monitor,
-  Files
+  Files,
+  Share
 } from '@element-plus/icons-vue'
 
 interface DisplayType {
@@ -203,6 +204,13 @@ const categories = ref([
         name: 'PointCloud2',
         icon: Monitor,
         description: 'Displays a sensor_msgs/PointCloud2 message.',
+        category: 'rviz'
+      },
+      {
+        id: 'tf',
+        name: 'TF',
+        icon: Share,
+        description: 'Displays the transform tree.',
         category: 'rviz'
       }
     ]

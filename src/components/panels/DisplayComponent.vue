@@ -63,7 +63,8 @@ import {
   DataLine,
   Monitor,
   ArrowDown,
-  CircleCheck
+  CircleCheck,
+  Share
 } from '@element-plus/icons-vue'
 import GridConfig from './display-configs/GridConfig.vue'
 import AxesConfig from './display-configs/AxesConfig.vue'
@@ -75,6 +76,7 @@ import MarkerConfig from './display-configs/MarkerConfig.vue'
 import ImageConfig from './display-configs/ImageConfig.vue'
 import LaserScanConfig from './display-configs/LaserScanConfig.vue'
 import PointCloud2Config from './display-configs/PointCloud2Config.vue'
+import TFConfig from './display-configs/TFConfig.vue'
 
 // 使用RViz store
 const rvizStore = useRvizStore()
@@ -115,7 +117,8 @@ const getComponentIcon = (type: string) => {
     marker: Location,
     image: Picture,
     laserscan: DataLine,
-    pointcloud2: Monitor
+    pointcloud2: Monitor,
+    tf: Share
   }
   return icons[type] || Monitor
 }
@@ -130,7 +133,8 @@ const getConfigComponent = (type: string) => {
     marker: MarkerConfig,
     image: ImageConfig,
     laserscan: LaserScanConfig,
-    pointcloud2: PointCloud2Config
+    pointcloud2: PointCloud2Config,
+    tf: TFConfig
   }
   return components[type] || 'div'
 }

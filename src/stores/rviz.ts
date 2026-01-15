@@ -204,6 +204,32 @@ export const useRvizStore = defineStore('rviz', () => {
       pointcloud2: {
         topic: '/pointcloud',
         queueSize: 10
+      },
+      tf: {
+        showNames: true,
+        showAxes: true,
+        showArrows: true,
+        markerScale: 1,
+        markerAlpha: 1,
+        updateInterval: 0,
+        frameTimeout: 15,
+        filterWhitelist: '',
+        filterBlacklist: '',
+        frames: [
+          { name: 'base_footprint', enabled: true },
+          { name: 'base_link', enabled: true },
+          { name: 'base_scan', enabled: true },
+          { name: 'camera_link', enabled: true },
+          { name: 'camera_rgb_frame', enabled: true },
+          { name: 'camera_rgb_optical_frame', enabled: true },
+          { name: 'caster_back_left_link', enabled: true },
+          { name: 'caster_back_right_link', enabled: true },
+          { name: 'imu_link', enabled: true },
+          { name: 'map', enabled: true },
+          { name: 'odom', enabled: true },
+          { name: 'wheel_left_link', enabled: true },
+          { name: 'wheel_right_link', enabled: true }
+        ]
       }
     }
     return defaults[type] || {}
