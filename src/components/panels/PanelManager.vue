@@ -87,9 +87,33 @@
           </div>
         </template>
         
-        <!-- 最后一个插入指示线 -->
+        <!-- 图像可视化面板（动态添加） -->
+        <template v-for="imageComponent in visibleImageComponents" :key="`image-${imageComponent.id}`">
+          <!-- 插入指示线 -->
+          <div
+            v-if="dragOverIndex === getImagePanelIndex(imageComponent.id)"
+            class="insert-indicator"
+          ></div>
+          
+          <!-- 面板包装器 -->
+          <div
+            class="panel-wrapper"
+            :class="{ dragging: draggedPanelId === `image-${imageComponent.id}` }"
+            draggable="true"
+            @dragstart="handleDragStart($event, `image-${imageComponent.id}`)"
+            @dragend="handleDragEnd($event)"
+          >
+            <ImageViewerPanel
+              :component-id="imageComponent.id"
+              :component-name="imageComponent.name"
+              :topic="imageComponent.options?.topic"
+            />
+          </div>
+        </template>
+        
+        <!-- 最后一个插入指示线（在所有面板和图像面板之后） -->
         <div
-          v-if="dragOverIndex === enabledPanelsList.length"
+          v-if="dragOverIndex === enabledPanelsList.length + visibleImageComponents.length"
           class="insert-indicator"
         ></div>
       </div>
@@ -172,6 +196,14 @@
       <RobotConnectionPanel
         v-else-if="floatingPanel.panelId === 'robot-connection'"
       />
+
+      <!-- 图像面板 -->
+      <ImageViewerPanel
+        v-else-if="floatingPanel.panelId.startsWith('image-')"
+        :component-id="floatingPanel.panelId.replace('image-', '')"
+        :component-name="getPanelTitle(floatingPanel.panelId)"
+        :topic="getImageComponentTopic(floatingPanel.panelId.replace('image-', ''))"
+      />
     </FloatingPanel>
   </div>
 </template>
@@ -185,6 +217,7 @@ import ToolPanel from './ToolPanel.vue'
 import DisplayPanel from './DisplayPanel.vue'
 import RobotConnectionPanel from './RobotConnectionPanel.vue'
 import FloatingPanel from './FloatingPanel.vue'
+import ImageViewerPanel from './ImageViewerPanel.vue'
 
 // 使用RViz store
 const rvizStore = useRvizStore()
@@ -227,7 +260,7 @@ const handleRenameDisplay = (itemId: string, newName: string) => {
 }
 
 const hasActivePanels = computed(() => {
-  return rvizStore.panelConfig.enabledPanels.length > 0 || floatingPanels.value.length > 0
+  return rvizStore.panelConfig.enabledPanels.length > 0 || floatingPanels.value.length > 0 || imageComponents.value.length > 0
 })
 
 // 获取启用的面板列表
@@ -240,6 +273,34 @@ const floatingPanels = computed(() => {
   return rvizStore.getFloatingPanels()
 })
 
+// 获取需要显示图像面板的组件（camera 和 image 类型）
+const imageComponents = computed(() => {
+  return rvizStore.displayComponents.filter(
+    component => (component.type === 'camera' || component.type === 'image') && component.enabled
+  )
+})
+
+// 获取可见的图像面板（排除已悬浮的）
+const visibleImageComponents = computed(() => {
+  const floatingPanelIds = new Set(floatingPanels.value.map(p => p.panelId))
+  return imageComponents.value.filter(
+    component => !floatingPanelIds.has(`image-${component.id}`)
+  )
+})
+
+// 获取图像面板在列表中的索引（用于插入指示线）
+const getImagePanelIndex = (componentId: string): number => {
+  // 图像面板在所有面板之后，所以索引是 enabledPanelsList.length + 图像面板的索引
+  const imageIndex = visibleImageComponents.value.findIndex(c => c.id === componentId)
+  return imageIndex >= 0 ? enabledPanelsList.value.length + imageIndex : -1
+}
+
+// 获取图像组件的 topic
+const getImageComponentTopic = (componentId: string): string => {
+  const component = rvizStore.displayComponents.find(c => c.id === componentId)
+  return component?.options?.topic || ''
+}
+
 // 拖拽相关状态
 const draggedPanelId = ref<string | null>(null)
 const dragOverIndex = ref<number | null>(null)
@@ -247,6 +308,13 @@ const isDraggingFromFloating = ref(false)
 
 // 获取面板标题
 const getPanelTitle = (panelId: string): string => {
+  // 处理图像面板 ID（格式：image-${componentId}）
+  if (panelId.startsWith('image-')) {
+    const componentId = panelId.replace('image-', '')
+    const component = rvizStore.displayComponents.find(c => c.id === componentId)
+    return component ? component.name : panelId
+  }
+  
   const titles: Record<string, string> = {
     'view-control': '视图控制',
     'scene-info': '场景信息',
@@ -358,7 +426,12 @@ const handleDrop = (e: DragEvent) => {
   
   // 将面板从悬浮窗口移回
   if (isDraggingFromFloating.value) {
-    rvizStore.dockPanel(draggedPanelId.value, insertIndex)
+    // 图像面板通过关闭悬浮状态来回到 PanelManager
+    if (draggedPanelId.value.startsWith('image-')) {
+      rvizStore.closeFloatingPanel(draggedPanelId.value)
+    } else {
+      rvizStore.dockPanel(draggedPanelId.value, insertIndex)
+    }
   }
   
   draggedPanelId.value = null
@@ -412,7 +485,12 @@ const handleFloatingDrag = (e: DragEvent) => {
 const handleFloatingDragEnd = () => {
   // 检查是否拖到了 PanelManager
   if (draggedPanelId.value && dragOverIndex.value !== null) {
-    rvizStore.dockPanel(draggedPanelId.value, dragOverIndex.value)
+    // 图像面板通过关闭悬浮状态来回到 PanelManager
+    if (draggedPanelId.value.startsWith('image-')) {
+      rvizStore.closeFloatingPanel(draggedPanelId.value)
+    } else {
+      rvizStore.dockPanel(draggedPanelId.value, dragOverIndex.value)
+    }
   }
   
   draggedPanelId.value = null

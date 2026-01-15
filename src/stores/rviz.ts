@@ -622,8 +622,8 @@ export const useRvizStore = defineStore('rviz', () => {
     const index = panelConfig.floatingPanels.findIndex(p => p.panelId === panelId)
     if (index > -1) {
       panelConfig.floatingPanels.splice(index, 1)
-      // 将面板重新添加到 enabledPanels
-      if (!panelConfig.enabledPanels.includes(panelId)) {
+      // 将面板重新添加到 enabledPanels（仅对标准面板，图像面板不需要）
+      if (!panelId.startsWith('image-') && !panelConfig.enabledPanels.includes(panelId)) {
         panelConfig.enabledPanels.push(panelId)
       }
       savePanelConfig()
