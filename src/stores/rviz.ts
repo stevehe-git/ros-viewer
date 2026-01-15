@@ -207,7 +207,7 @@ export const useRvizStore = defineStore('rviz', () => {
         alpha: 1
       },
       camera: {
-        topic: '/camera/image_raw',
+        topic: '/camera/rgb/image_raw',
         queueSize: 2,
         transportHint: 'raw'
       },
@@ -226,7 +226,7 @@ export const useRvizStore = defineStore('rviz', () => {
         queueSize: 100
       },
       image: {
-        topic: '/camera/image_raw',
+        topic: '/camera/rgb/image_raw',
         queueSize: 2,
         transportHint: 'raw'
       },
