@@ -171,13 +171,14 @@ export const useRvizStore = defineStore('rviz', () => {
   }
 
   // 获取组件数据
+  // 优先从统一订阅管理器获取最新数据（单一数据源）
   const getComponentData = (componentId: string): any | null => {
     // 优先从统一订阅管理器获取最新数据
     const latestMessage = topicSubscriptionManager.getLatestMessage(componentId)
     if (latestMessage) {
       return latestMessage
     }
-    // 回退到缓存
+    // 回退到缓存（兼容旧代码，但应该逐步移除）
     return componentDataCache.value.get(componentId) || null
   }
 
@@ -189,6 +190,7 @@ export const useRvizStore = defineStore('rviz', () => {
 
   // 订阅组件话题（统一管理）
   const subscribeComponentTopic = (componentId: string, componentType: string, topic: string | undefined, queueSize: number = 10): boolean => {
+    console.log("subscribeComponentTopic", componentId, componentType, topic, queueSize)
     return topicSubscriptionManager.subscribe(componentId, componentType, topic, queueSize)
   }
 
@@ -526,12 +528,7 @@ export const useRvizStore = defineStore('rviz', () => {
   }
 
   const getPlugin = (pluginId: string): CommunicationPlugin | null => {
-    const plugin = communicationPlugins.value.get(pluginId) || null
-    // 更新话题订阅管理器的 ROS 插件
-    if (pluginId === 'ros') {
-      topicSubscriptionManager.setROSPlugin(plugin)
-    }
-    return plugin
+    return communicationPlugins.value.get(pluginId) || null
   }
 
   const updateAvailablePlugins = () => {
@@ -559,14 +556,19 @@ export const useRvizStore = defineStore('rviz', () => {
       const success = await currentPlugin.connect(params)
       if (!success) {
         throw new Error('Connection failed')
+      } else {
+        console.log('Connection successful')
       }
 
-      robotConnection.connected = true
-
-      // 更新话题订阅管理器的 ROS 插件
-      if (protocol === 'ros') {
+      // 先更新话题订阅管理器的 ROS 插件（在设置 connected 之前）
+      // 对于 ROS 协议，在连接成功后立即设置插件
+      // ROS 实例在 connect 方法中已经创建（在 connection 事件之前）
+      if (protocol === 'ros' && currentPlugin) {
         topicSubscriptionManager.setROSPlugin(currentPlugin)
       }
+
+      // 最后设置连接状态，这会触发 watch 订阅话题
+      robotConnection.connected = true
 
       return true
     } catch (error) {

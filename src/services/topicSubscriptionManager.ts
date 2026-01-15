@@ -3,6 +3,7 @@
  * 负责管理所有组件的话题订阅，避免重复订阅
  * 支持多种数据格式（ROS/protobuf/json）
  */
+import { toRaw } from 'vue'
 import * as ROSLIB from 'roslib'
 import type { CommunicationPlugin } from '@/stores/rviz'
 import { DataConverter } from './dataConverter'
@@ -43,8 +44,28 @@ export class TopicSubscriptionManager {
    * 设置 ROS 插件实例
    */
   setROSPlugin(plugin: CommunicationPlugin | null) {
+    console.log("TopicSubscriptionManager setROSPlugin", plugin)
     this.rosPlugin = plugin
     this.updateROSInstance()
+    
+    // 如果插件已设置且已连接，重新订阅所有已订阅的话题
+    if (plugin && this.rosInstance) {
+      // 使用 try-catch 安全地访问 isConnected，避免代理对象访问私有成员的问题
+      try {
+        const isConnected = this.rosInstance.isConnected
+        if (isConnected) {
+          // 获取所有已订阅的组件ID
+          const subscribedIds = Array.from(this.subscribers.keys())
+          subscribedIds.forEach((componentId) => {
+            // 重新订阅（这里需要组件信息，暂时跳过，由外部组件重新订阅）
+            console.log("TopicSubscriptionManager: ROS plugin updated, component", componentId, "should resubscribe")
+          })
+        }
+      } catch (error) {
+        // 如果访问 isConnected 失败，忽略（可能是代理对象问题）
+        console.warn("TopicSubscriptionManager: Could not check ROS connection status", error)
+      }
+    }
   }
 
   /**
@@ -52,9 +73,22 @@ export class TopicSubscriptionManager {
    */
   private updateROSInstance() {
     if (this.rosPlugin) {
-      this.rosInstance = (this.rosPlugin as any).getROSInstance?.() as ROSLIB.Ros | null
+      // 检查是否有 getROSInstance 方法
+      if (typeof (this.rosPlugin as any).getROSInstance === 'function') {
+        // 使用 toRaw 获取原始对象，避免响应式代理导致的私有成员访问问题
+        const rawPlugin = toRaw(this.rosPlugin)
+        const instance = (rawPlugin as any).getROSInstance() as ROSLIB.Ros | null
+        // 也使用 toRaw 确保获取原始 ROS 实例
+        this.rosInstance = instance ? toRaw(instance) : null
+        console.log("TopicSubscriptionManager updateROSInstance", this.rosInstance, this.rosInstance?.isConnected)
+      } else {
+        // 如果没有 getROSInstance 方法
+        console.warn("ROSPlugin does not have getROSInstance method")
+        this.rosInstance = null
+      }
     } else {
       this.rosInstance = null
+      console.log("TopicSubscriptionManager updateROSInstance - no rosPlugin")
     }
   }
 
@@ -96,11 +130,57 @@ export class TopicSubscriptionManager {
       return false
     }
 
-    // 更新 ROS 实例
+    // 更新 ROS 实例（每次订阅前都更新，确保获取最新实例）
     this.updateROSInstance()
 
-    // 检查 ROS 连接
-    if (!this.rosInstance || !this.rosInstance.isConnected) {
+    // 检查 ROS 插件和实例
+    console.log("TopicSubscriptionManager subscribe rosPlugin", this.rosPlugin)
+    if (!this.rosPlugin) {
+      this.statuses.set(componentId, {
+        subscribed: false,
+        hasData: false,
+        messageCount: 0,
+        lastMessageTime: null,
+        error: 'ROS plugin not set'
+      })
+      console.warn(`TopicSubscriptionManager: ROS plugin not set for component ${componentId}, subscription will be retried`)
+      return false
+    }
+
+    console.log("TopicSubscriptionManager subscribe rosInstance", this.rosInstance, this.rosInstance?.isConnected)
+    if (!this.rosInstance) {
+      this.statuses.set(componentId, {
+        subscribed: false,
+        hasData: false,
+        messageCount: 0,
+        lastMessageTime: null,
+        error: 'ROS instance not available'
+      })
+      return false
+    }
+
+    // 检查 ROS 连接状态（使用 try-catch 安全访问）
+    let isConnected = false
+    try {
+      isConnected = this.rosInstance.isConnected
+    } catch (error) {
+      // 如果无法访问 isConnected，尝试使用插件的 isConnected 方法
+      if (this.rosPlugin && typeof (this.rosPlugin as any).isConnected === 'function') {
+        isConnected = (this.rosPlugin as any).isConnected()
+      } else {
+        console.warn("TopicSubscriptionManager: Could not check ROS connection status", error)
+        this.statuses.set(componentId, {
+          subscribed: false,
+          hasData: false,
+          messageCount: 0,
+          lastMessageTime: null,
+          error: 'Could not verify ROS connection'
+        })
+        return false
+      }
+    }
+
+    if (!isConnected) {
       this.statuses.set(componentId, {
         subscribed: false,
         hasData: false,
@@ -140,6 +220,7 @@ export class TopicSubscriptionManager {
 
       // 订阅消息
       subscriber.subscribe((message: any) => {
+        // console.log("TopicSubscriptionManager subscribe message", message)
         const timestamp = Date.now()
 
         // 检查数据是否有效
@@ -275,7 +356,7 @@ export class TopicSubscriptionManager {
    * 取消所有订阅
    */
   unsubscribeAll(): void {
-    this.subscribers.forEach((subscriber, componentId) => {
+    this.subscribers.forEach((subscriber) => {
       try {
         subscriber.unsubscribe()
       } catch (error) {

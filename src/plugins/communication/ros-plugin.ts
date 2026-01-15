@@ -107,6 +107,12 @@ export class ROSPlugin implements CommunicationPlugin {
       status: this.currentParams?.connected ? '已连接' : '未连接'
     }
   }
+
+  // 获取 ROS 实例
+  getROSInstance(): ROSLIB.Ros | null {
+    // 直接返回实例，不访问 isConnected 以避免在响应式代理中访问私有成员
+    return this.rosInstance
+  }
 }
 
 // 创建ROS插件实例

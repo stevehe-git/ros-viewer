@@ -23,11 +23,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { Picture } from '@element-plus/icons-vue'
-import { useRvizStore } from '@/stores/rviz'
+import { useTopicSubscription } from '@/composables/useTopicSubscription'
 import BasePanel from './BasePanel.vue'
-import * as ROSLIB from 'roslib'
 
 interface Props {
   componentId: string
@@ -37,15 +36,22 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const rvizStore = useRvizStore()
-
 const imageUrl = ref<string>('')
 const imageInfo = ref<{ width: number; height: number; encoding?: string } | null>(null)
-let imageSubscriber: ROSLIB.Topic | null = null
 
 const panelTitle = computed(() => {
   return props.componentName || '图像视图'
 })
+
+// 使用统一的话题订阅管理器
+const {
+  getLatestMessage
+} = useTopicSubscription(
+  props.componentId,
+  'image', // 组件类型
+  props.topic,
+  1 // 只保留最新的一帧
+)
 
 // 将 ROS Image 消息转换为 Data URL
 const convertImageMessageToDataURL = (message: any): string => {
@@ -55,10 +61,10 @@ const convertImageMessageToDataURL = (message: any): string => {
     }
 
     // 获取图像尺寸
-    const width = message.width || 0
-    const height = message.height || 0
+    const width = message.width ?? 0
+    const height = message.height ?? 0
     const encoding = message.encoding || 'rgb8'
-    const step = message.step || (width * 3) // 默认每行字节数
+    const step = message.step ?? (width * 3) // 默认每行字节数
     
     if (width === 0 || height === 0) {
       return ''
@@ -114,13 +120,13 @@ const convertImageMessageToDataURL = (message: any): string => {
           
           if (srcIndex + 2 < data.length) {
             if (encoding === 'rgb8') {
-              imageData.data[dstIndex] = data[srcIndex]         // R
-              imageData.data[dstIndex + 1] = data[srcIndex + 1] // G
-              imageData.data[dstIndex + 2] = data[srcIndex + 2] // B
+              imageData.data[dstIndex] = data[srcIndex] ?? 0         // R
+              imageData.data[dstIndex + 1] = data[srcIndex + 1] ?? 0 // G
+              imageData.data[dstIndex + 2] = data[srcIndex + 2] ?? 0 // B
             } else {
-              imageData.data[dstIndex] = data[srcIndex + 2]     // R
-              imageData.data[dstIndex + 1] = data[srcIndex + 1] // G
-              imageData.data[dstIndex + 2] = data[srcIndex]     // B
+              imageData.data[dstIndex] = data[srcIndex + 2] ?? 0     // R
+              imageData.data[dstIndex + 1] = data[srcIndex + 1] ?? 0 // G
+              imageData.data[dstIndex + 2] = data[srcIndex] ?? 0     // B
             }
             imageData.data[dstIndex + 3] = 255 // Alpha
           }
@@ -135,15 +141,15 @@ const convertImageMessageToDataURL = (message: any): string => {
           
           if (srcIndex + 3 < data.length) {
             if (encoding === 'rgba8') {
-              imageData.data[dstIndex] = data[srcIndex]
-              imageData.data[dstIndex + 1] = data[srcIndex + 1]
-              imageData.data[dstIndex + 2] = data[srcIndex + 2]
-              imageData.data[dstIndex + 3] = data[srcIndex + 3]
+              imageData.data[dstIndex] = data[srcIndex] ?? 0
+              imageData.data[dstIndex + 1] = data[srcIndex + 1] ?? 0
+              imageData.data[dstIndex + 2] = data[srcIndex + 2] ?? 0
+              imageData.data[dstIndex + 3] = data[srcIndex + 3] ?? 0
             } else {
-              imageData.data[dstIndex] = data[srcIndex + 2]
-              imageData.data[dstIndex + 1] = data[srcIndex + 1]
-              imageData.data[dstIndex + 2] = data[srcIndex]
-              imageData.data[dstIndex + 3] = data[srcIndex + 3]
+              imageData.data[dstIndex] = data[srcIndex + 2] ?? 0
+              imageData.data[dstIndex + 1] = data[srcIndex + 1] ?? 0
+              imageData.data[dstIndex + 2] = data[srcIndex] ?? 0
+              imageData.data[dstIndex + 3] = data[srcIndex + 3] ?? 0
             }
           }
         }
@@ -156,7 +162,7 @@ const convertImageMessageToDataURL = (message: any): string => {
           const dstIndex = (y * width + x) * 4
           
           if (srcIndex < data.length) {
-            const gray = data[srcIndex]
+            const gray = data[srcIndex] ?? 0
             imageData.data[dstIndex] = gray
             imageData.data[dstIndex + 1] = gray
             imageData.data[dstIndex + 2] = gray
@@ -178,93 +184,23 @@ const convertImageMessageToDataURL = (message: any): string => {
   }
 }
 
-// 获取 ROS 实例
-const getROSInstance = (): ROSLIB.Ros | null => {
-  const rosPlugin = rvizStore.getPlugin('ros')
-  if (rosPlugin) {
-    return (rosPlugin as any).getROSInstance?.() as ROSLIB.Ros | null
+// 监听最新消息，转换为图像URL
+watch(() => getLatestMessage(), (message) => {
+  if (message) {
+    const dataUrl = convertImageMessageToDataURL(message)
+    if (dataUrl) {
+      imageUrl.value = dataUrl
+    }
+  } else {
+    imageUrl.value = ''
+    imageInfo.value = null
   }
-  return null
-}
-
-// 订阅图像话题
-const subscribeImageTopic = () => {
-  // 先取消旧的订阅
-  unsubscribeImageTopic()
-
-  const ros = getROSInstance()
-  if (!ros || !ros.isConnected) {
-    return
-  }
-
-  const topic = props.topic || ''
-  if (!topic) {
-    return
-  }
-
-  try {
-    imageSubscriber = new ROSLIB.Topic({
-      ros: ros,
-      name: topic,
-      messageType: 'sensor_msgs/Image',
-      queue_size: 1 // 只保留最新的一帧
-    })
-
-    imageSubscriber.subscribe((message: any) => {
-      const dataUrl = convertImageMessageToDataURL(message)
-      if (dataUrl) {
-        imageUrl.value = dataUrl
-      }
-    })
-
-    console.log(`Subscribed to image topic: ${topic} for component: ${props.componentName}`)
-  } catch (error) {
-    console.error(`Failed to subscribe to image topic ${topic}:`, error)
-  }
-}
-
-// 取消订阅
-const unsubscribeImageTopic = () => {
-  if (imageSubscriber) {
-    imageSubscriber.unsubscribe()
-    imageSubscriber = null
-  }
-  imageUrl.value = ''
-  imageInfo.value = null
-}
+}, { immediate: true })
 
 const handleImageError = () => {
   console.error('Failed to load image')
   imageUrl.value = ''
 }
-
-// 监听 topic 变化
-watch(() => props.topic, (newTopic) => {
-  if (newTopic) {
-    subscribeImageTopic()
-  } else {
-    unsubscribeImageTopic()
-  }
-}, { immediate: true })
-
-// 监听 ROS 连接状态
-watch(() => rvizStore.robotConnection.connected, (connected) => {
-  if (connected && props.topic) {
-    subscribeImageTopic()
-  } else {
-    unsubscribeImageTopic()
-  }
-})
-
-onMounted(() => {
-  if (props.topic && rvizStore.robotConnection.connected) {
-    subscribeImageTopic()
-  }
-})
-
-onUnmounted(() => {
-  unsubscribeImageTopic()
-})
 </script>
 
 <style scoped>

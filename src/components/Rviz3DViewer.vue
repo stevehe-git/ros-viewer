@@ -907,12 +907,16 @@ watch(() => rvizStore.displayComponents, (newComponents) => {
       const topic = component.options?.topic
       if (isValidTopic(topic) && rvizStore.robotConnection.connected) {
         // 使用统一订阅管理器订阅
-        rvizStore.subscribeComponentTopic(
+        // 如果订阅失败（例如插件未设置），会在连接状态变化时重试
+        const success = rvizStore.subscribeComponentTopic(
           component.id,
           component.type,
           topic,
           component.options?.queueSize || 10
         )
+        if (!success) {
+          console.warn(`Failed to subscribe component ${component.id}, will retry on connection`)
+        }
       } else {
         // topic无效或未连接，取消订阅
         rvizStore.unsubscribeComponentTopic(component.id)
@@ -940,8 +944,9 @@ watch(() => rvizStore.displayComponents, (newComponents) => {
 
 // 监听连接状态，当连接时重新订阅所有组件（使用统一订阅管理器）
 watch(() => rvizStore.robotConnection.connected, (connected) => {
+  console.log("Rviz3DViewer watch robotConnection.connected", connected)
   if (connected) {
-    // 延迟一点确保连接稳定
+    // 延迟一点确保 ROS 插件已设置到订阅管理器
     setTimeout(() => {
       // 重新订阅所有启用的组件（使用统一订阅管理器）
       rvizStore.displayComponents.forEach((component) => {
@@ -954,7 +959,7 @@ watch(() => rvizStore.robotConnection.connected, (connected) => {
           )
         }
       })
-    }, 500)
+    }, 300)
   } else {
     // 断开连接时，统一订阅管理器会自动处理取消订阅
     
@@ -993,11 +998,13 @@ onMounted(() => {
 })
 
 // 监听组件数据变化，更新 3D 渲染
-watch(() => rvizStore.componentDataCache, () => {
+// 使用统一的订阅管理器作为数据源
+watch(() => rvizStore.displayComponents, () => {
   if (!renderer3D) return
 
   // 遍历所有组件，检查数据变化并更新渲染
   rvizStore.displayComponents.forEach((component) => {
+    // 直接从统一订阅管理器获取数据（单一数据源）
     const data = rvizStore.getComponentData(component.id)
     const subscriptionStatus = rvizStore.getComponentSubscriptionStatus(component.id)
     
@@ -1012,6 +1019,33 @@ watch(() => rvizStore.componentDataCache, () => {
     }
   })
 }, { deep: true })
+
+// 监听组件数据变化（从统一订阅管理器）
+// 使用定时器定期检查数据更新，避免过度监听
+let dataCheckTimer: ReturnType<typeof setInterval> | null = null
+watch(() => rvizStore.robotConnection.connected, (connected) => {
+  if (connected && !dataCheckTimer) {
+    // 每100ms检查一次数据更新
+    dataCheckTimer = setInterval(() => {
+      if (!renderer3D) return
+      
+      rvizStore.displayComponents.forEach((component) => {
+        if (component.enabled) {
+          const data = rvizStore.getComponentData(component.id)
+          const subscriptionStatus = rvizStore.getComponentSubscriptionStatus(component.id)
+          
+          if (data && subscriptionStatus?.hasData && renderer3D) {
+            renderer3D.updateComponentRender(component.id, component.type, data)
+            updateComponentVisibility(component.id, component.type)
+          }
+        }
+      })
+    }, 100)
+  } else if (!connected && dataCheckTimer) {
+    clearInterval(dataCheckTimer)
+    dataCheckTimer = null
+  }
+})
 
 onUnmounted(() => {
   // 清理 3D 渲染器

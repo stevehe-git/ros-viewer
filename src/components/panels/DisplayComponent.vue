@@ -196,9 +196,10 @@ watch(() => props.component.options?.queueSize, () => {
 })
 
 // 将最新消息存储到 store 中供 rviz-viewer 使用
+// 注意：数据现在直接从 topicSubscriptionManager 获取，这里保留 updateComponentData 作为兼容层
 watch(() => getLatestMessage(), (message) => {
   if (message && props.component.enabled) {
-    // 将数据存储到 store 中供 rviz-viewer 使用
+    // 将数据存储到 store 中供 rviz-viewer 使用（兼容旧代码）
     rvizStore.updateComponentData(props.component.id, message)
   } else if (!props.component.enabled) {
     // 组件禁用时清除数据
