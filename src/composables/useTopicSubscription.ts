@@ -1,4 +1,4 @@
-import { ref, watch, onUnmounted, computed } from 'vue'
+import { watch, onUnmounted, computed } from 'vue'
 import { useRvizStore } from '@/stores/rviz'
 import { topicSubscriptionManager, type SubscriptionStatus, type CachedMessage } from '@/services/topicSubscriptionManager'
 
@@ -14,8 +14,13 @@ export function useTopicSubscription(
 ) {
   const rvizStore = useRvizStore()
   
-  // 订阅状态（从统一管理器获取）
+  // 获取状态更新触发器（用于响应式追踪）
+  const statusUpdateTrigger = topicSubscriptionManager.getStatusUpdateTrigger()
+  
+  // 订阅状态（从统一管理器获取，通过触发器实现响应式）
   const status = computed<SubscriptionStatus>(() => {
+    // 访问触发器以确保响应式追踪
+    statusUpdateTrigger.value
     return topicSubscriptionManager.getStatus(componentId) || {
       subscribed: false,
       hasData: false,
@@ -69,7 +74,7 @@ export function useTopicSubscription(
   }, { immediate: true })
   
   // 监听队列大小变化
-  watch(() => queueSize, (newSize: number) => {
+  watch(() => queueSize, () => {
     // 重新订阅以应用新的队列大小
     if (topic && topic.trim() !== '') {
       subscribe()

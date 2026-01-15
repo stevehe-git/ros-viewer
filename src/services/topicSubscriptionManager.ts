@@ -3,7 +3,7 @@
  * 负责管理所有组件的话题订阅，避免重复订阅
  * 支持多种数据格式（ROS/protobuf/json）
  */
-import { toRaw } from 'vue'
+import { toRaw, ref } from 'vue'
 import * as ROSLIB from 'roslib'
 import type { CommunicationPlugin } from '@/stores/rviz'
 import { DataConverter } from './dataConverter'
@@ -26,6 +26,8 @@ export class TopicSubscriptionManager {
   private subscribers = new Map<string, ROSLIB.Topic<any>>()
   private messageQueues = new Map<string, CachedMessage[]>()
   private statuses = new Map<string, SubscriptionStatus>()
+  // 使用响应式 ref 来触发状态更新通知
+  private statusUpdateTrigger = ref(0)
   private rosInstance: ROSLIB.Ros | null = null
   private rosPlugin: CommunicationPlugin | null = null
 
@@ -127,6 +129,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: 'Topic not specified'
       })
+      this.statusUpdateTrigger.value++
       return false
     }
 
@@ -143,6 +146,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: 'ROS plugin not set'
       })
+      this.statusUpdateTrigger.value++
       console.warn(`TopicSubscriptionManager: ROS plugin not set for component ${componentId}, subscription will be retried`)
       return false
     }
@@ -156,6 +160,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: 'ROS instance not available'
       })
+      this.statusUpdateTrigger.value++
       return false
     }
 
@@ -176,6 +181,7 @@ export class TopicSubscriptionManager {
           lastMessageTime: null,
           error: 'Could not verify ROS connection'
         })
+        this.statusUpdateTrigger.value++
         return false
       }
     }
@@ -188,6 +194,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: 'ROS not connected'
       })
+      this.statusUpdateTrigger.value++
       return false
     }
 
@@ -201,6 +208,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: `Unknown message type for component type: ${componentType}`
       })
+      this.statusUpdateTrigger.value++
       return false
     }
 
@@ -243,6 +251,9 @@ export class TopicSubscriptionManager {
           lastMessageTime: timestamp,
           error: null
         })
+        
+        // 触发响应式更新（让 Vue 知道状态已改变）
+        this.statusUpdateTrigger.value++
 
         // 如果数据有效，添加到缓存队列
         if (hasData) {
@@ -270,6 +281,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: null
       })
+      this.statusUpdateTrigger.value++
 
       console.log(`Subscribed to topic: ${topic} for component: ${componentId} (${componentType})`)
       return true
@@ -282,6 +294,7 @@ export class TopicSubscriptionManager {
         lastMessageTime: null,
         error: error?.message || 'Subscription failed'
       })
+      this.statusUpdateTrigger.value++
       return false
     }
   }
@@ -307,6 +320,7 @@ export class TopicSubscriptionManager {
         ...currentStatus,
         subscribed: false
       })
+      this.statusUpdateTrigger.value++
     }
   }
 
@@ -332,7 +346,16 @@ export class TopicSubscriptionManager {
    * 获取订阅状态
    */
   getStatus(componentId: string): SubscriptionStatus | null {
+    // 访问 trigger 以确保响应式追踪
+    this.statusUpdateTrigger.value
     return this.statuses.get(componentId) || null
+  }
+  
+  /**
+   * 获取状态更新触发器（用于响应式追踪）
+   */
+  getStatusUpdateTrigger() {
+    return this.statusUpdateTrigger
   }
 
   /**
@@ -349,6 +372,7 @@ export class TopicSubscriptionManager {
         ...status,
         hasData: false
       })
+      this.statusUpdateTrigger.value++
     }
   }
 
