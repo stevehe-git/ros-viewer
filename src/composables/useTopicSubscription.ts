@@ -24,6 +24,7 @@ export function useTopicSubscription(
   messageType: string,
   queueSize: number = 10
 ) {
+  console.log("useTopicSubscription", componentId, topic, messageType, queueSize)
   const rvizStore = useRvizStore()
   
   // 订阅状态

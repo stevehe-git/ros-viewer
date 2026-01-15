@@ -110,35 +110,6 @@
         >
           {{ rvizStore.robotConnection.connected ? '断开连接' : '连接' }}
         </el-button>
-        <el-button
-          :disabled="!rvizStore.robotConnection.connected"
-          @click="refreshTopics"
-          size="small"
-          class="action-button"
-        >
-          刷新话题
-        </el-button>
-      </div>
-
-      <!-- 可用话题列表 -->
-      <div v-if="rvizStore.robotConnection.connected" class="topics-section">
-        <h4>可用话题 ({{ rvizStore.robotConnection.topics.length }})</h4>
-        <div class="topics-list">
-          <div
-            v-for="topic in rvizStore.robotConnection.topics"
-            :key="topic"
-            class="topic-item"
-          >
-            <span class="topic-name">{{ topic }}</span>
-            <el-button
-              type="text"
-              size="small"
-              @click="addTopicToDisplay(topic)"
-            >
-              添加到显示
-            </el-button>
-          </div>
-        </div>
       </div>
     </div>
   </BasePanel>
@@ -228,26 +199,6 @@ const disconnect = () => {
   rvizStore.disconnectRobot()
 }
 
-// 刷新话题列表
-const refreshTopics = async () => {
-  if (!rvizStore.robotConnection.connected) return
-
-  try {
-    const topics = await rvizStore.getTopics()
-    rvizStore.robotConnection.topics = topics
-    ElMessage.success('话题列表已刷新。')
-  } catch (error: any) {
-    console.error('刷新话题失败:', error)
-    ElMessage.error(`刷新话题失败: ${error.message || '未知错误'}`)
-  }
-}
-
-// 添加话题到显示面板
-const addTopicToDisplay = (topic: string) => {
-  // 这里可以根据话题类型自动创建对应的显示组件
-  // 暂时只是显示提示
-  ElMessage.info(`添加话题 "${topic}" 到显示面板的功能正在开发中`)
-}
 </script>
 
 <style scoped>
@@ -327,40 +278,6 @@ const addTopicToDisplay = (topic: string) => {
   flex: 1;
 }
 
-.topics-section {
-  border-top: 1px solid #ebeef5;
-  padding-top: 12px;
-}
-
-.topics-section h4 {
-  margin: 0 0 8px 0;
-  font-size: 14px;
-  font-weight: 500;
-  color: #303133;
-}
-
-.topics-list {
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.topic-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 8px;
-  margin-bottom: 4px;
-  background-color: #f8f9fa;
-  border-radius: 4px;
-  font-size: 13px;
-}
-
-.topic-name {
-  flex: 1;
-  color: #606266;
-  font-family: 'Courier New', monospace;
-}
-
 .status-indicator:not(.connected) {
   background-color: #fef0f0;
   color: #f56c6c;
@@ -412,37 +329,6 @@ const addTopicToDisplay = (topic: string) => {
   gap: 8px;
 }
 
-.topics-section {
-  border: 1px solid #e4e7ed;
-  border-radius: 4px;
-  padding: 12px;
-}
-
-.topics-section h4 {
-  margin: 0 0 8px 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #303133;
-}
-
-.topics-list {
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.topic-item {
-  padding: 4px 8px;
-  margin-bottom: 4px;
-  background-color: #f8f9fa;
-  border-radius: 3px;
-  font-family: monospace;
-  font-size: 12px;
-  color: #495057;
-}
-
-.topic-item:last-child {
-  margin-bottom: 0;
-}
 
 .protocol-description {
   margin-top: 8px;

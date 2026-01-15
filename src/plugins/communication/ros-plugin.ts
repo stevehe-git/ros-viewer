@@ -97,21 +97,6 @@ export class ROSPlugin implements CommunicationPlugin {
     }
   }
 
-  async getTopics(): Promise<string[]> {
-    return new Promise((resolve, reject) => {
-      if (!this.rosInstance) {
-        reject(new Error('No ROS connection'))
-        return
-      }
-
-      this.rosInstance.getTopics((topics: any) => {
-        resolve(topics || [])
-      }, (error: any) => {
-        reject(error)
-      })
-    })
-  }
-
   isConnected(): boolean {
     return this.currentParams?.connected || false
   }

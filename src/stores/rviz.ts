@@ -36,7 +36,6 @@ export interface CommunicationPlugin {
   getConnectionParams(): ConnectionParam[]
   connect(params: ConnectionParams): Promise<boolean>
   disconnect(): void
-  getTopics(): Promise<string[]>
   isConnected(): boolean
   getConnectionInfo(): ConnectionParams & { status: string }
 }
@@ -58,7 +57,6 @@ export interface RobotConnection {
   protocol: string
   params: ConnectionParams
   connected: boolean
-  topics: string[]
   availablePlugins: CommunicationPlugin[]
 }
 
@@ -116,7 +114,6 @@ export const useRvizStore = defineStore('rviz', () => {
       port: 9090
     },
     connected: false,
-    topics: [],
     availablePlugins: []
   })
 
@@ -538,14 +535,6 @@ export const useRvizStore = defineStore('rviz', () => {
 
       robotConnection.connected = true
 
-      // 获取话题列表
-      try {
-        robotConnection.topics = await currentPlugin.getTopics()
-      } catch (error) {
-        console.warn('Failed to get topics:', error)
-        robotConnection.topics = []
-      }
-
       return true
     } catch (error) {
       console.error('Robot connection failed:', error)
@@ -563,23 +552,12 @@ export const useRvizStore = defineStore('rviz', () => {
       }
 
       robotConnection.connected = false
-      robotConnection.topics = []
     } catch (error) {
       console.error('Robot disconnection failed:', error)
     }
   }
 
   // ROS连接实现
-
-
-  // 获取话题列表（使用插件系统）
-  const getTopics = async (): Promise<string[]> => {
-    if (!currentPlugin) {
-      throw new Error('No active connection')
-    }
-
-    return await currentPlugin.getTopics()
-  }
 
   // MQTT连接实现（预留）
 
@@ -910,7 +888,6 @@ export const useRvizStore = defineStore('rviz', () => {
     updateSceneState,
     connectRobot,
     disconnectRobot,
-    getTopics,
     registerPlugin,
     unregisterPlugin,
     getPlugin,

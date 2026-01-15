@@ -97,16 +97,6 @@ export class MQTTPlugin implements CommunicationPlugin {
     this.connectionParams.connected = false
   }
 
-  async getTopics(): Promise<string[]> {
-    // MQTT通常没有固定的"话题"概念，这里返回一些示例
-    return Promise.resolve([
-      'sensor/temperature',
-      'sensor/humidity',
-      'robot/status',
-      'robot/cmd_vel'
-    ])
-  }
-
   isConnected(): boolean {
     return this.connectionParams.connected || false
   }

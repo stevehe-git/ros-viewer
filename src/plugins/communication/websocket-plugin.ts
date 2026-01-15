@@ -105,16 +105,6 @@ export class WebSocketPlugin implements CommunicationPlugin {
     this.connectionParams.connected = false
   }
 
-  async getTopics(): Promise<string[]> {
-    // WebSocket通常没有固定的"话题"概念，这里返回一些示例
-    return Promise.resolve([
-      'system/status',
-      'system/logs',
-      'custom/data',
-      'custom/events'
-    ])
-  }
-
   isConnected(): boolean {
     return this.connectionParams.connected || false
   }
