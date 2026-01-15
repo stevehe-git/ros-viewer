@@ -164,6 +164,24 @@ export const useRvizStore = defineStore('rviz', () => {
   // 选中的组件ID
   const selectedItem = ref<string>('')
 
+  // 组件数据缓存（用于存储从话题订阅接收的数据）
+  const componentDataCache = ref<Map<string, any>>(new Map())
+
+  // 更新组件数据（从话题订阅接收的数据）
+  const updateComponentData = (componentId: string, data: any) => {
+    componentDataCache.value.set(componentId, data)
+  }
+
+  // 获取组件数据
+  const getComponentData = (componentId: string): any | null => {
+    return componentDataCache.value.get(componentId) || null
+  }
+
+  // 清除组件数据
+  const clearComponentData = (componentId: string) => {
+    componentDataCache.value.delete(componentId)
+  }
+
   // 默认配置选项
   const getDefaultOptions = (type: string): Record<string, any> => {
     const defaults: Record<string, any> = {
@@ -875,11 +893,15 @@ export const useRvizStore = defineStore('rviz', () => {
     sceneState,
     displayComponents,
     selectedItem,
+    componentDataCache,
 
     // 方法
     addComponent,
     updateComponent,
     updateComponentOptions,
+    updateComponentData,
+    getComponentData,
+    clearComponentData,
     removeComponent,
     renameComponent,
     duplicateComponent,

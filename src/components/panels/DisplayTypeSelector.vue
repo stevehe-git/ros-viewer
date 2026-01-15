@@ -220,7 +220,7 @@ const categories = ref([
 const topics = ref<string[]>([
   '/map',
   '/scan',
-  '/camera/image_raw',
+  '/camera/rgb/image_raw',
   '/odom',
   '/path',
   '/marker',

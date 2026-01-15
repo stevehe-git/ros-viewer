@@ -27,16 +27,44 @@
       <!-- Status子项 -->
       <div class="display-sub-item">
         <div class="sub-item-header" @click.stop="toggleSubItem('status')">
-          <el-icon class="sub-item-icon success-icon">
-            <CircleCheck />
+          <el-icon 
+            class="sub-item-icon" 
+            :class="{
+              'success-icon': subscriptionStatus.subscribed && subscriptionStatus.hasData,
+              'warning-icon': subscriptionStatus.subscribed && !subscriptionStatus.hasData,
+              'error-icon': subscriptionStatus.error
+            }"
+          >
+            <CircleCheck v-if="subscriptionStatus.subscribed && subscriptionStatus.hasData" />
+            <Warning v-else-if="subscriptionStatus.error" />
+            <CircleCheck v-else />
           </el-icon>
-          <span class="sub-item-name">Status: Ok</span>
+          <span class="sub-item-name">
+            Status: {{ getStatusText() }}
+          </span>
           <el-icon class="expand-icon" :class="{ expanded: expandedSubItems['status'] }">
             <ArrowDown />
           </el-icon>
         </div>
         <div v-show="expandedSubItems['status']" class="sub-item-content">
-          <!-- Status内容 -->
+          <div class="status-detail">
+            <div class="status-row">
+              <span class="status-label">Subscribed:</span>
+              <span class="status-value">{{ subscriptionStatus.subscribed ? 'Yes' : 'No' }}</span>
+            </div>
+            <div class="status-row" v-if="subscriptionStatus.subscribed">
+              <span class="status-label">Messages:</span>
+              <span class="status-value">{{ subscriptionStatus.messageCount }}</span>
+            </div>
+            <div class="status-row" v-if="subscriptionStatus.lastMessageTime">
+              <span class="status-label">Last Message:</span>
+              <span class="status-value">{{ formatTime(subscriptionStatus.lastMessageTime) }}</span>
+            </div>
+            <div class="status-row" v-if="subscriptionStatus.error">
+              <span class="status-label error-text">Error:</span>
+              <span class="status-value error-text">{{ subscriptionStatus.error }}</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -51,8 +79,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import { useRvizStore } from '@/stores/rviz'
+import { useTopicSubscription } from '@/composables/useTopicSubscription'
 import {
   Grid,
   Position,
@@ -64,7 +93,8 @@ import {
   Monitor,
   ArrowDown,
   CircleCheck,
-  Share
+  Share,
+  Warning
 } from '@element-plus/icons-vue'
 import GridConfig from './display-configs/GridConfig.vue'
 import AxesConfig from './display-configs/AxesConfig.vue'
@@ -106,6 +136,95 @@ watch(() => props.component.enabled, (newVal) => {
 const expandedSubItems = reactive<Record<string, boolean>>({
   status: true
 })
+
+// 组件类型到消息类型的映射
+const COMPONENT_MESSAGE_TYPES: Record<string, string> = {
+  map: 'nav_msgs/OccupancyGrid',
+  path: 'nav_msgs/Path',
+  laserscan: 'sensor_msgs/LaserScan',
+  pointcloud2: 'sensor_msgs/PointCloud2',
+  marker: 'visualization_msgs/Marker',
+  image: 'sensor_msgs/Image',
+  camera: 'sensor_msgs/Image'
+}
+
+// 获取消息类型
+const messageType = computed(() => {
+  return COMPONENT_MESSAGE_TYPES[props.component.type] || ''
+})
+
+// 话题订阅（仅对需要话题的组件类型）
+const needsTopic = computed(() => {
+  return ['map', 'path', 'laserscan', 'pointcloud2', 'marker', 'image', 'camera'].includes(props.component.type)
+})
+
+// 使用话题订阅 composable
+const {
+  status: subscriptionStatus,
+  messageQueue,
+  getLatestMessage,
+  subscribe,
+  unsubscribe
+} = useTopicSubscription(
+  props.component.id,
+  props.component.options?.topic,
+  messageType.value,
+  props.component.options?.queueSize || 10
+)
+
+// 监听组件启用状态
+watch(() => props.component.enabled, (enabled) => {
+  if (enabled && needsTopic.value) {
+    subscribe()
+  } else {
+    unsubscribe()
+  }
+}, { immediate: true })
+
+// 监听话题变化
+watch(() => props.component.options?.topic, () => {
+  if (props.component.enabled && needsTopic.value) {
+    subscribe()
+  }
+})
+
+// 监听队列大小变化
+watch(() => props.component.options?.queueSize, () => {
+  if (props.component.enabled && needsTopic.value) {
+    subscribe()
+  }
+})
+
+// 将最新消息存储到 store 中供 rviz-viewer 使用
+watch(() => getLatestMessage(), (message) => {
+  if (message && props.component.enabled) {
+    // 将数据存储到 store 中供 rviz-viewer 使用
+    rvizStore.updateComponentData(props.component.id, message)
+  } else if (!props.component.enabled) {
+    // 组件禁用时清除数据
+    rvizStore.clearComponentData(props.component.id)
+  }
+}, { immediate: true })
+
+// 获取状态文本
+const getStatusText = (): string => {
+  if (subscriptionStatus.value.error) {
+    return 'Error'
+  }
+  if (!subscriptionStatus.value.subscribed) {
+    return 'Not Subscribed'
+  }
+  if (subscriptionStatus.value.hasData) {
+    return 'Ok'
+  }
+  return 'Waiting for data...'
+}
+
+// 格式化时间
+const formatTime = (timestamp: number): string => {
+  const date = new Date(timestamp)
+  return date.toLocaleTimeString()
+}
 
 const getComponentIcon = (type: string) => {
   const icons: Record<string, any> = {
@@ -240,5 +359,37 @@ const emit = defineEmits<{
 .sub-item-content {
   padding-left: 32px;
   background: #f5f7fa;
+}
+
+.warning-icon {
+  color: #e6a23c;
+}
+
+.error-icon {
+  color: #f56c6c;
+}
+
+.status-detail {
+  padding: 8px;
+  font-size: 11px;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  color: #606266;
+}
+
+.status-label {
+  font-weight: 500;
+}
+
+.status-value {
+  color: #909399;
+}
+
+.error-text {
+  color: #f56c6c;
 }
 </style>
