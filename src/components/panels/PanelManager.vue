@@ -1,9 +1,120 @@
 <template>
-  <div v-if="hasActivePanels" class="panel-manager">
-    <!-- 选中的面板 -->
-    <div class="active-panels">
+  <div>
+    <!-- PanelManager 容器 -->
+    <div 
+      v-if="hasActivePanels || floatingPanels.length > 0" 
+      class="panel-manager" 
+      :style="{ width: `${rvizStore.panelConfig.panelWidth}px` }"
+      @dragover.prevent="handleDragOver" 
+      @drop="handleDrop"
+    >
+      <!-- 选中的面板 -->
+      <div class="active-panels">
+        <template v-for="(panelId, index) in enabledPanelsList" :key="panelId">
+          <!-- 插入指示线 -->
+          <div
+            v-if="dragOverIndex === index"
+            class="insert-indicator"
+          ></div>
+          
+          <!-- 面板包装器 -->
+          <div
+            class="panel-wrapper"
+            :class="{ dragging: draggedPanelId === panelId }"
+            draggable="true"
+            @dragstart="handleDragStart($event, panelId)"
+            @dragend="handleDragEnd($event)"
+          >
+            <ViewControlPanel
+              v-if="panelId === 'view-control'"
+        :camera-mode="rvizStore.sceneState.cameraMode"
+        :show-grid="rvizStore.sceneState.showGrid"
+        :show-axes="rvizStore.sceneState.showAxes"
+        :show-robot="rvizStore.sceneState.showRobot"
+        :show-map="rvizStore.sceneState.showMap"
+        :show-path="rvizStore.sceneState.showPath"
+        :show-laser="rvizStore.sceneState.showLaser"
+        :background-color="rvizStore.sceneState.backgroundColor"
+        :is-fullscreen="props.isFullscreen"
+        @reset-camera="$emit('resetCamera')"
+        @toggle-grid="$emit('toggleGrid')"
+        @toggle-axes="$emit('toggleAxes')"
+        @update:camera-mode="$emit('update:cameraMode', $event)"
+        @update:show-robot="$emit('update:showRobot', $event)"
+        @update:show-map="$emit('update:showMap', $event)"
+        @update:show-path="$emit('update:showPath', $event)"
+        @update:show-laser="$emit('update:showLaser', $event)"
+        @update:background-color="$emit('update:backgroundColor', $event)"
+        @toggle-fullscreen="$emit('toggleFullscreen')"
+      />
+
+            <SceneInfoPanel
+              v-else-if="panelId === 'scene-info'"
+        :fps="rvizStore.sceneState.fps"
+        :camera-pos="rvizStore.sceneState.cameraPos"
+        :object-count="rvizStore.sceneState.objectCount"
+        :memory-usage="rvizStore.sceneState.memoryUsage"
+        :texture-count="rvizStore.sceneState.textureCount"
+      />
+
+            <ToolPanel
+              v-else-if="panelId === 'tools'"
+        :is-recording="rvizStore.sceneState.isRecording"
+        :performance-mode="rvizStore.sceneState.performanceMode"
+        :show-debug-info="rvizStore.sceneState.showDebugInfo"
+        @take-screenshot="$emit('takeScreenshot')"
+        @export-scene="$emit('exportScene')"
+        @reset-scene="$emit('resetScene')"
+        @toggle-recording="$emit('toggleRecording', $event)"
+        @toggle-performance-mode="$emit('togglePerformanceMode', $event)"
+        @toggle-debug-info="$emit('toggleDebugInfo', $event)"
+      />
+
+            <DisplayPanel
+              v-else-if="panelId === 'display'"
+        @update:global-options="handleGlobalOptionsUpdate"
+        @update:grid-options="handleGridOptionsUpdate"
+        @update:axes-options="handleAxesOptionsUpdate"
+        @add-display="handleAddDisplay"
+        @duplicate-display="handleDuplicateDisplay"
+        @remove-display="handleRemoveDisplay"
+        @rename-display="handleRenameDisplay"
+      />
+
+            <RobotConnectionPanel
+              v-else-if="panelId === 'robot-connection'"
+            />
+          </div>
+        </template>
+        
+        <!-- 最后一个插入指示线 -->
+        <div
+          v-if="dragOverIndex === enabledPanelsList.length"
+          class="insert-indicator"
+        ></div>
+      </div>
+    </div>
+
+    <!-- 悬浮面板 -->
+    <FloatingPanel
+      v-for="floatingPanel in floatingPanels"
+      :key="floatingPanel.panelId"
+      :panel-id="floatingPanel.panelId"
+      :panel-title="getPanelTitle(floatingPanel.panelId)"
+      :visible="true"
+      :x="floatingPanel.x"
+      :y="floatingPanel.y"
+      :width="floatingPanel.width"
+      :height="floatingPanel.height"
+      :draggable="true"
+      @close="handleCloseFloatingPanel(floatingPanel.panelId)"
+      @update:position="(x: number, y: number) => handleUpdateFloatingPosition(floatingPanel.panelId, x, y)"
+      @drag-start="handleFloatingDragStart(floatingPanel.panelId)"
+      @drag-end="handleFloatingDragEnd"
+      @drag="handleFloatingDrag"
+    >
       <ViewControlPanel
-        v-if="isPanelEnabled('view-control')"
+        v-if="floatingPanel.panelId === 'view-control'"
         :camera-mode="rvizStore.sceneState.cameraMode"
         :show-grid="rvizStore.sceneState.showGrid"
         :show-axes="rvizStore.sceneState.showAxes"
@@ -26,7 +137,7 @@
       />
 
       <SceneInfoPanel
-        v-if="isPanelEnabled('scene-info')"
+        v-else-if="floatingPanel.panelId === 'scene-info'"
         :fps="rvizStore.sceneState.fps"
         :camera-pos="rvizStore.sceneState.cameraPos"
         :object-count="rvizStore.sceneState.objectCount"
@@ -35,7 +146,7 @@
       />
 
       <ToolPanel
-        v-if="isPanelEnabled('tools')"
+        v-else-if="floatingPanel.panelId === 'tools'"
         :is-recording="rvizStore.sceneState.isRecording"
         :performance-mode="rvizStore.sceneState.performanceMode"
         :show-debug-info="rvizStore.sceneState.showDebugInfo"
@@ -48,7 +159,7 @@
       />
 
       <DisplayPanel
-        v-if="isPanelEnabled('display')"
+        v-else-if="floatingPanel.panelId === 'display'"
         @update:global-options="handleGlobalOptionsUpdate"
         @update:grid-options="handleGridOptionsUpdate"
         @update:axes-options="handleAxesOptionsUpdate"
@@ -59,20 +170,21 @@
       />
 
       <RobotConnectionPanel
-        v-if="isPanelEnabled('robot-connection')"
+        v-else-if="floatingPanel.panelId === 'robot-connection'"
       />
-    </div>
+    </FloatingPanel>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRvizStore } from '@/stores/rviz'
 import ViewControlPanel from './ViewControlPanel.vue'
 import SceneInfoPanel from './SceneInfoPanel.vue'
 import ToolPanel from './ToolPanel.vue'
 import DisplayPanel from './DisplayPanel.vue'
 import RobotConnectionPanel from './RobotConnectionPanel.vue'
+import FloatingPanel from './FloatingPanel.vue'
 
 // 使用RViz store
 const rvizStore = useRvizStore()
@@ -85,11 +197,6 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   isFullscreen: false
 })
-
-// 使用store中的面板启用状态
-const isPanelEnabled = (panelId: string): boolean => {
-  return rvizStore.isPanelEnabled(panelId)
-}
 
 const handleGlobalOptionsUpdate = (options: any) => {
   emit('update:globalOptions', options)
@@ -120,7 +227,258 @@ const handleRenameDisplay = (itemId: string, newName: string) => {
 }
 
 const hasActivePanels = computed(() => {
-  return rvizStore.panelConfig.enabledPanels.length > 0
+  return rvizStore.panelConfig.enabledPanels.length > 0 || floatingPanels.value.length > 0
+})
+
+// 获取启用的面板列表
+const enabledPanelsList = computed(() => {
+  return rvizStore.panelConfig.enabledPanels
+})
+
+// 获取悬浮面板列表
+const floatingPanels = computed(() => {
+  return rvizStore.getFloatingPanels()
+})
+
+// 拖拽相关状态
+const draggedPanelId = ref<string | null>(null)
+const dragOverIndex = ref<number | null>(null)
+const isDraggingFromFloating = ref(false)
+
+// 获取面板标题
+const getPanelTitle = (panelId: string): string => {
+  const titles: Record<string, string> = {
+    'view-control': '视图控制',
+    'scene-info': '场景信息',
+    'tools': '工具面板',
+    'display': '显示',
+    'robot-connection': '机器人连接'
+  }
+  return titles[panelId] || panelId
+}
+
+// 拖拽开始（从 PanelManager）
+const handleDragStart = (e: DragEvent, panelId: string) => {
+  draggedPanelId.value = panelId
+  isDraggingFromFloating.value = false
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', panelId)
+  }
+}
+
+// 拖拽结束
+const handleDragEnd = (e: DragEvent) => {
+  // 如果拖拽到 PanelManager 外部（任意非 panel manager 区域），创建悬浮窗口
+  if (draggedPanelId.value && !isDraggingFromFloating.value) {
+    // 检查是否在 PanelManager 区域内
+    const panelManager = document.querySelector('.panel-manager') as HTMLElement
+    const isOverPanelManager = panelManager && 
+      e.clientX >= panelManager.getBoundingClientRect().left &&
+      e.clientX <= panelManager.getBoundingClientRect().right &&
+      e.clientY >= panelManager.getBoundingClientRect().top &&
+      e.clientY <= panelManager.getBoundingClientRect().bottom
+    
+    // 如果不在 PanelManager 区域内，创建悬浮窗口
+    if (!isOverPanelManager || dragOverIndex.value === null) {
+      const panelManagerRect = panelManager?.getBoundingClientRect()
+      // 使用鼠标位置作为初始位置（任意非 panel manager 区域）
+      const x = Math.max(0, e.clientX - 50)
+      const y = Math.max(0, e.clientY - 50)
+      
+      // 获取 PanelManager 的宽度作为悬浮面板的宽度（保持一致）
+      const panelManagerWidth = panelManagerRect ? panelManagerRect.width - 32 : 268
+      rvizStore.floatPanel(draggedPanelId.value, x, y, panelManagerWidth)
+    }
+  }
+  
+  draggedPanelId.value = null
+  dragOverIndex.value = null
+  isDraggingFromFloating.value = false
+}
+
+// 拖拽悬停（在 PanelManager 上）
+const handleDragOver = (e: DragEvent) => {
+  e.preventDefault()
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'move'
+  }
+  
+  if (!draggedPanelId.value) return
+  
+  // 计算插入位置
+  const panelManager = e.currentTarget as HTMLElement
+  const rect = panelManager.getBoundingClientRect()
+  const y = e.clientY - rect.top
+  
+  // 找到应该插入的位置
+  const panels = panelManager.querySelectorAll('.panel-wrapper')
+  let insertIndex = panels.length
+  
+  for (let i = 0; i < panels.length; i++) {
+    const panel = panels[i]
+    if (panel instanceof HTMLElement) {
+      const panelRect = panel.getBoundingClientRect()
+      if (y < panelRect.top + panelRect.height / 2) {
+        insertIndex = i
+        break
+      }
+    }
+  }
+  
+  dragOverIndex.value = insertIndex
+}
+
+// 放置（拖回 PanelManager）
+const handleDrop = (e: DragEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
+  
+  if (!draggedPanelId.value) return
+  
+  // 计算插入位置
+  const panelManager = e.currentTarget as HTMLElement
+  const rect = panelManager.getBoundingClientRect()
+  const y = e.clientY - rect.top
+  
+  // 找到应该插入的位置
+  const panels = panelManager.querySelectorAll('.panel-wrapper')
+  let insertIndex = panels.length
+  
+  for (let i = 0; i < panels.length; i++) {
+    const panel = panels[i]
+    if (panel instanceof HTMLElement) {
+      const panelRect = panel.getBoundingClientRect()
+      if (y < panelRect.top + panelRect.height / 2) {
+        insertIndex = i
+        break
+      }
+    }
+  }
+  
+  // 将面板从悬浮窗口移回
+  if (isDraggingFromFloating.value) {
+    rvizStore.dockPanel(draggedPanelId.value, insertIndex)
+  }
+  
+  draggedPanelId.value = null
+  dragOverIndex.value = null
+  isDraggingFromFloating.value = false
+}
+
+// 悬浮面板拖拽开始
+const handleFloatingDragStart = (panelId: string) => {
+  draggedPanelId.value = panelId
+  isDraggingFromFloating.value = true
+}
+
+// 悬浮面板拖拽中
+const handleFloatingDrag = (e: DragEvent) => {
+  if (!isDraggingFromFloating.value || !draggedPanelId.value) return
+  
+  const panelManager = document.querySelector('.panel-manager') as HTMLElement
+  if (!panelManager) return
+  
+  const rect = panelManager.getBoundingClientRect()
+  const isOverPanelManager = 
+    e.clientX >= rect.left && 
+    e.clientX <= rect.right && 
+    e.clientY >= rect.top && 
+    e.clientY <= rect.bottom
+  
+  if (isOverPanelManager) {
+    const y = e.clientY - rect.top
+    const panels = panelManager.querySelectorAll('.panel-wrapper')
+    let index = panels.length
+    
+    for (let i = 0; i < panels.length; i++) {
+      const panel = panels[i]
+      if (panel instanceof HTMLElement) {
+        const panelRect = panel.getBoundingClientRect()
+        if (y < panelRect.top + panelRect.height / 2) {
+          index = i
+          break
+        }
+      }
+    }
+    
+    dragOverIndex.value = index
+  } else {
+    dragOverIndex.value = null
+  }
+}
+
+// 悬浮面板拖拽结束
+const handleFloatingDragEnd = () => {
+  // 检查是否拖到了 PanelManager
+  if (draggedPanelId.value && dragOverIndex.value !== null) {
+    rvizStore.dockPanel(draggedPanelId.value, dragOverIndex.value)
+  }
+  
+  draggedPanelId.value = null
+  dragOverIndex.value = null
+  isDraggingFromFloating.value = false
+}
+
+// 关闭悬浮面板
+const handleCloseFloatingPanel = (panelId: string) => {
+  rvizStore.closeFloatingPanel(panelId)
+}
+
+// 更新悬浮面板位置
+const handleUpdateFloatingPosition = (panelId: string, x: number, y: number) => {
+  rvizStore.updateFloatingPanelPosition(panelId, x, y)
+}
+
+// 监听全局拖拽事件
+onMounted(() => {
+  const handleGlobalDragOver = (e: DragEvent) => {
+    const panelManager = document.querySelector('.panel-manager') as HTMLElement
+    if (!panelManager) return
+    
+    const rect = panelManager.getBoundingClientRect()
+    const isOverPanelManager = 
+      e.clientX >= rect.left && 
+      e.clientX <= rect.right && 
+      e.clientY >= rect.top && 
+      e.clientY <= rect.bottom
+    
+    // 从悬浮面板拖回
+    if (isDraggingFromFloating.value && draggedPanelId.value) {
+      if (isOverPanelManager) {
+        const y = e.clientY - rect.top
+        const panels = panelManager.querySelectorAll('.panel-wrapper')
+        let index = panels.length
+        
+        for (let i = 0; i < panels.length; i++) {
+          const panel = panels[i]
+          if (panel instanceof HTMLElement) {
+            const panelRect = panel.getBoundingClientRect()
+            if (y < panelRect.top + panelRect.height / 2) {
+              index = i
+              break
+            }
+          }
+        }
+        
+        dragOverIndex.value = index
+      } else {
+        dragOverIndex.value = null
+      }
+    }
+    // 从 PanelManager 拖出
+    else if (draggedPanelId.value && !isDraggingFromFloating.value) {
+      if (!isOverPanelManager) {
+        dragOverIndex.value = null
+      }
+    }
+  }
+  
+  document.addEventListener('dragover', handleGlobalDragOver)
+  
+  onUnmounted(() => {
+    document.removeEventListener('dragover', handleGlobalDragOver)
+  })
 })
 
 const emit = defineEmits<{
@@ -152,7 +510,6 @@ const emit = defineEmits<{
 
 <style scoped>
 .panel-manager {
-  width: 300px;
   min-width: 200px;
   max-width: 600px;
   padding: 16px;
@@ -161,6 +518,7 @@ const emit = defineEmits<{
   height: 100%;
   flex-shrink: 0;
   transition: width 0.2s ease;
+  box-sizing: border-box;
 }
 
 .rviz-viewer.resizing .panel-manager {
@@ -184,5 +542,53 @@ const emit = defineEmits<{
 
 .active-panels {
   margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.panel-wrapper {
+  position: relative;
+  width: 100%;
+  margin-bottom: 0;
+  cursor: grab;
+  transition: opacity 0.2s;
+}
+
+.panel-wrapper :deep(.base-panel) {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.panel-wrapper :deep(.el-card) {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.panel-wrapper.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.panel-wrapper[draggable="true"]:hover {
+  outline: 2px dashed #409eff;
+  outline-offset: 2px;
+}
+
+.insert-indicator {
+  height: 2px;
+  background: #409eff;
+  margin: 4px 0;
+  border-radius: 1px;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 </style>

@@ -727,13 +727,8 @@ const handleResize = (e: MouseEvent) => {
   panelWidth.value = newPanelWidth
   viewerWidth.value = newViewerWidth
 
-  // 更新面板管理器宽度
-  if (panelManagerRef.value) {
-    const panelElement = (panelManagerRef.value.$el as HTMLElement)
-    if (panelElement) {
-      panelElement.style.width = `${newPanelWidth}px`
-    }
-  }
+  // 实时更新store中的面板宽度，让PanelManager自动响应
+  rvizStore.updatePanelConfig({ panelWidth: newPanelWidth })
 
   // 触发窗口resize以更新3D视图
   onWindowResize()
@@ -1106,15 +1101,8 @@ watch(() => rvizStore.panelConfig.enabledPanels, (newPanels) => {
 }, { deep: true })
 
 onMounted(() => {
-  // 初始化面板管理器宽度
-  nextTick(() => {
-    if (panelManagerRef.value) {
-      const panelElement = (panelManagerRef.value.$el as HTMLElement)
-      if (panelElement) {
-        panelElement.style.width = `${rvizStore.panelConfig.panelWidth}px`
-      }
-    }
-  })
+  // PanelManager 现在通过 :style 绑定自动响应 store 的 panelWidth
+  // 不需要手动设置宽度
 
   initScene()
 })

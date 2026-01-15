@@ -62,11 +62,21 @@ export interface RobotConnection {
   availablePlugins: CommunicationPlugin[]
 }
 
+// 悬浮面板信息接口
+export interface FloatingPanelInfo {
+  panelId: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 // 面板配置接口
 export interface PanelConfig {
   enabledPanels: string[]
   panelWidth: number
   isFullscreen: boolean
+  floatingPanels?: FloatingPanelInfo[]
 }
 
 // 3D场景状态接口
@@ -112,7 +122,8 @@ export const useRvizStore = defineStore('rviz', () => {
   const panelConfig = reactive<PanelConfig>({
     enabledPanels: ['view-control', 'scene-info', 'tools', 'display'],
     panelWidth: 300,
-    isFullscreen: false
+    isFullscreen: false,
+    floatingPanels: []
   })
 
   // 全局选项
@@ -537,6 +548,93 @@ export const useRvizStore = defineStore('rviz', () => {
     return panelConfig.enabledPanels.includes(panelId)
   }
 
+  // 将面板移到悬浮窗口
+  const floatPanel = (panelId: string, x?: number, y?: number, width?: number, height?: number) => {
+    if (!panelConfig.floatingPanels) {
+      panelConfig.floatingPanels = []
+    }
+    
+    // 如果已经在悬浮列表中，更新位置
+    const existingPanel = panelConfig.floatingPanels.find(p => p.panelId === panelId)
+    if (existingPanel) {
+      if (x !== undefined) existingPanel.x = x
+      if (y !== undefined) existingPanel.y = y
+      if (width !== undefined) existingPanel.width = width
+      if (height !== undefined) existingPanel.height = height
+      savePanelConfig()
+      return
+    }
+    
+    // 从 enabledPanels 中移除
+    const index = panelConfig.enabledPanels.indexOf(panelId)
+    if (index > -1) {
+      panelConfig.enabledPanels.splice(index, 1)
+    }
+    
+    // 添加到悬浮列表
+    panelConfig.floatingPanels.push({
+      panelId,
+      x: x || 100,
+      y: y || 100,
+      width: width || 268,
+      height: height || 500
+    })
+    
+    savePanelConfig()
+  }
+
+  // 将面板从悬浮窗口移回 PanelManager
+  const dockPanel = (panelId: string, insertIndex?: number) => {
+    if (!panelConfig.floatingPanels) return
+    
+    // 从悬浮列表中移除
+    const floatingIndex = panelConfig.floatingPanels.findIndex(p => p.panelId === panelId)
+    if (floatingIndex > -1) {
+      panelConfig.floatingPanels.splice(floatingIndex, 1)
+    }
+    
+    // 添加到 enabledPanels
+    if (insertIndex !== undefined && insertIndex >= 0 && insertIndex <= panelConfig.enabledPanels.length) {
+      panelConfig.enabledPanels.splice(insertIndex, 0, panelId)
+    } else {
+      panelConfig.enabledPanels.push(panelId)
+    }
+    
+    savePanelConfig()
+  }
+
+  // 更新悬浮面板位置
+  const updateFloatingPanelPosition = (panelId: string, x: number, y: number) => {
+    if (!panelConfig.floatingPanels) return
+    
+    const panel = panelConfig.floatingPanels.find(p => p.panelId === panelId)
+    if (panel) {
+      panel.x = x
+      panel.y = y
+      savePanelConfig()
+    }
+  }
+
+  // 关闭悬浮面板
+  const closeFloatingPanel = (panelId: string) => {
+    if (!panelConfig.floatingPanels) return
+    
+    const index = panelConfig.floatingPanels.findIndex(p => p.panelId === panelId)
+    if (index > -1) {
+      panelConfig.floatingPanels.splice(index, 1)
+      // 将面板重新添加到 enabledPanels
+      if (!panelConfig.enabledPanels.includes(panelId)) {
+        panelConfig.enabledPanels.push(panelId)
+      }
+      savePanelConfig()
+    }
+  }
+
+  // 获取悬浮面板列表
+  const getFloatingPanels = (): FloatingPanelInfo[] => {
+    return panelConfig.floatingPanels || []
+  }
+
   // 配置管理方法
   const saveCurrentConfig = () => {
     const config = {
@@ -651,6 +749,11 @@ export const useRvizStore = defineStore('rviz', () => {
     updatePanelConfig,
     togglePanel,
     isPanelEnabled,
+    floatPanel,
+    dockPanel,
+    updateFloatingPanelPosition,
+    closeFloatingPanel,
+    getFloatingPanels,
     saveCurrentConfig,
     loadSavedConfig,
     exportConfig,

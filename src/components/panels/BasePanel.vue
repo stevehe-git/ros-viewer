@@ -73,6 +73,8 @@ defineEmits<{
 .base-panel {
   margin-bottom: 16px;
   transition: all 0.3s ease;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .panel-header {
