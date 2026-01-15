@@ -71,7 +71,7 @@ defineEmits<{
 
 <style scoped>
 .base-panel {
-  margin-bottom: 16px;
+  margin-bottom: 0px;
   transition: all 0.3s ease;
   width: 100%;
   box-sizing: border-box;
@@ -81,7 +81,7 @@ defineEmits<{
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
+  padding: 0px 0px;
 }
 
 .panel-title {
