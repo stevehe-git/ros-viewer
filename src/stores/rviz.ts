@@ -269,7 +269,13 @@ export const useRvizStore = defineStore('rviz', () => {
       },
       pointcloud2: {
         topic: '/pointcloud',
-        queueSize: 10
+        queueSize: 10,
+        size: 0.01,
+        alpha: 1,
+        colorTransformer: 'RGB', // RGB 或 Intensity
+        useRainbow: true,
+        minColor: { r: 0, g: 0, b: 0 },
+        maxColor: { r: 255, g: 255, b: 255 }
       },
       tf: {
         showNames: true,
