@@ -863,9 +863,9 @@ const updateComponentVisibility = (componentId: string, componentType: string) =
 
   const visible = hasValidTopic && hasData
 
-  // 使用 3D 渲染器设置可见性
+  // 使用 3D 渲染器设置可见性（传递 componentId 以支持多个相同类型的组件）
   if (renderer3D) {
-    renderer3D.setComponentVisibility(componentType, visible)
+    renderer3D.setComponentVisibility(componentType, visible, componentId)
   }
 
   // 根据组件类型更新 sceneState

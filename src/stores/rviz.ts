@@ -254,7 +254,18 @@ export const useRvizStore = defineStore('rviz', () => {
       },
       laserscan: {
         topic: '/scan',
-        queueSize: 10
+        queueSize: 10,
+        style: 'Flat Squares',
+        size: 0.01,
+        alpha: 1,
+        colorTransformer: 'Intensity',
+        useRainbow: true,
+        autocomputeIntensityBounds: true,
+        minIntensity: 0,
+        maxIntensity: 0,
+        minColor: { r: 0, g: 0, b: 0 },
+        maxColor: { r: 255, g: 255, b: 255 },
+        invertRainbow: false
       },
       pointcloud2: {
         topic: '/pointcloud',
