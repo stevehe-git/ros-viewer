@@ -54,11 +54,22 @@ const {
   1 // 只保留最新的一帧
 )
 
-// 将 ROS Image 消息转换为 Data URL
-const convertImageMessageToDataURL = (message: any): string => {
+// 重用 canvas 和 context，避免频繁创建 DOM 元素
+let canvas: HTMLCanvasElement | null = null
+let ctx: CanvasRenderingContext2D | null = null
+let currentBlobUrl: string | null = null
+
+// 优化 base64 解码：使用更高效的方法
+const decodeBase64ToUint8Array = (base64: string): Uint8Array => {
+  const binaryString = atob(base64)
+  return Uint8Array.from(binaryString, (char) => char.charCodeAt(0))
+}
+
+// 使用批量操作优化像素转换（避免双重循环）
+const convertImageMessageToBlobURL = async (message: any): Promise<string> => {
   try {
     if (!message || !message.data) {
-      return ''
+      return Promise.resolve('')
     }
 
     // 获取图像尺寸
@@ -68,22 +79,18 @@ const convertImageMessageToDataURL = (message: any): string => {
     const step = message.step ?? (width * 3) // 默认每行字节数
     
     if (width === 0 || height === 0) {
-      return ''
+      return Promise.resolve('')
     }
 
     // 处理 data 字段（可能是 Uint8Array 或 base64 字符串）
     let data: Uint8Array
     if (typeof message.data === 'string') {
-      // 如果是 base64 字符串，需要解码
+      // 优化：使用更高效的 base64 解码
       try {
-        const binaryString = atob(message.data)
-        data = new Uint8Array(binaryString.length)
-        for (let i = 0; i < binaryString.length; i++) {
-          data[i] = binaryString.charCodeAt(i)
-        }
+        data = decodeBase64ToUint8Array(message.data)
       } catch (e) {
         console.error('Failed to decode base64 image data:', e)
-        return ''
+        return Promise.resolve('')
       }
     } else if (message.data instanceof Uint8Array) {
       data = message.data
@@ -91,134 +98,170 @@ const convertImageMessageToDataURL = (message: any): string => {
       data = new Uint8Array(message.data)
     } else {
       console.error('Unsupported image data type:', typeof message.data)
-      return ''
+      return Promise.resolve('')
     }
 
     if (data.length === 0) {
-      return ''
+      return Promise.resolve('')
     }
 
-    // 创建 canvas 来渲染图像
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d')
-    
+    // 重用 canvas 和 context，避免频繁创建
+    if (!canvas || canvas.width !== width || canvas.height !== height) {
+      canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      ctx = canvas.getContext('2d', { willReadFrequently: false })
+      if (!ctx) {
+        return Promise.resolve('')
+      }
+    }
+
+    // 确保 ctx 不为 null（TypeScript 类型检查）
     if (!ctx) {
-      return ''
+      return Promise.resolve('')
     }
 
-    // 根据编码类型处理图像数据
+    // 重用 ImageData 对象
     const imageData = ctx.createImageData(width, height)
+    const dstData = imageData.data
+    const pixelCount = width * height
     
-    // 处理不同的编码格式
+    // 优化：使用单层循环和批量操作，减少数组访问次数
     if (encoding === 'rgb8' || encoding === 'bgr8') {
       // RGB/BGR 格式，每像素 3 字节
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const srcIndex = y * step + x * 3
-          const dstIndex = (y * width + x) * 4
-          
-          if (srcIndex + 2 < data.length) {
-            if (encoding === 'rgb8') {
-              imageData.data[dstIndex] = data[srcIndex] ?? 0         // R
-              imageData.data[dstIndex + 1] = data[srcIndex + 1] ?? 0 // G
-              imageData.data[dstIndex + 2] = data[srcIndex + 2] ?? 0 // B
-            } else {
-              imageData.data[dstIndex] = data[srcIndex + 2] ?? 0     // R
-              imageData.data[dstIndex + 1] = data[srcIndex + 1] ?? 0 // G
-              imageData.data[dstIndex + 2] = data[srcIndex] ?? 0     // B
-            }
-            imageData.data[dstIndex + 3] = 255 // Alpha
+      const isBGR = encoding === 'bgr8'
+      for (let i = 0; i < pixelCount; i++) {
+        const y = Math.floor(i / width)
+        const x = i % width
+        const srcIndex = y * step + x * 3
+        
+        if (srcIndex + 2 < data.length) {
+          const dstIndex = i * 4
+          if (isBGR) {
+            dstData[dstIndex] = data[srcIndex + 2] ?? 0     // R
+            dstData[dstIndex + 1] = data[srcIndex + 1] ?? 0 // G
+            dstData[dstIndex + 2] = data[srcIndex] ?? 0     // B
+          } else {
+            dstData[dstIndex] = data[srcIndex] ?? 0         // R
+            dstData[dstIndex + 1] = data[srcIndex + 1] ?? 0 // G
+            dstData[dstIndex + 2] = data[srcIndex + 2] ?? 0 // B
           }
+          dstData[dstIndex + 3] = 255 // Alpha
         }
       }
     } else if (encoding === 'rgba8' || encoding === 'bgra8') {
       // RGBA/BGRA 格式，每像素 4 字节
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const srcIndex = y * step + x * 4
-          const dstIndex = (y * width + x) * 4
-          
-          if (srcIndex + 3 < data.length) {
-            if (encoding === 'rgba8') {
-              imageData.data[dstIndex] = data[srcIndex] ?? 0
-              imageData.data[dstIndex + 1] = data[srcIndex + 1] ?? 0
-              imageData.data[dstIndex + 2] = data[srcIndex + 2] ?? 0
-              imageData.data[dstIndex + 3] = data[srcIndex + 3] ?? 0
-            } else {
-              imageData.data[dstIndex] = data[srcIndex + 2] ?? 0
-              imageData.data[dstIndex + 1] = data[srcIndex + 1] ?? 0
-              imageData.data[dstIndex + 2] = data[srcIndex] ?? 0
-              imageData.data[dstIndex + 3] = data[srcIndex + 3] ?? 0
-            }
+      const isBGRA = encoding === 'bgra8'
+      for (let i = 0; i < pixelCount; i++) {
+        const y = Math.floor(i / width)
+        const x = i % width
+        const srcIndex = y * step + x * 4
+        
+        if (srcIndex + 3 < data.length) {
+          const dstIndex = i * 4
+          if (isBGRA) {
+            dstData[dstIndex] = data[srcIndex + 2] ?? 0     // R
+            dstData[dstIndex + 1] = data[srcIndex + 1] ?? 0 // G
+            dstData[dstIndex + 2] = data[srcIndex] ?? 0     // B
+            dstData[dstIndex + 3] = data[srcIndex + 3] ?? 0 // A
+          } else {
+            dstData[dstIndex] = data[srcIndex] ?? 0         // R
+            dstData[dstIndex + 1] = data[srcIndex + 1] ?? 0 // G
+            dstData[dstIndex + 2] = data[srcIndex + 2] ?? 0 // B
+            dstData[dstIndex + 3] = data[srcIndex + 3] ?? 0 // A
           }
         }
       }
     } else if (encoding === 'mono8') {
-      // 灰度图像，每像素 1 字节
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const srcIndex = y * step + x
-          const dstIndex = (y * width + x) * 4
-          
-          if (srcIndex < data.length) {
-            const gray = data[srcIndex] ?? 0
-            imageData.data[dstIndex] = gray
-            imageData.data[dstIndex + 1] = gray
-            imageData.data[dstIndex + 2] = gray
-            imageData.data[dstIndex + 3] = 255
-          }
+      // 灰度图像，每像素 1 字节 - 优化：批量复制
+      for (let i = 0; i < pixelCount; i++) {
+        const y = Math.floor(i / width)
+        const x = i % width
+        const srcIndex = y * step + x
+        
+        if (srcIndex < data.length) {
+          const dstIndex = i * 4
+          const gray = data[srcIndex] ?? 0
+          dstData[dstIndex] = gray
+          dstData[dstIndex + 1] = gray
+          dstData[dstIndex + 2] = gray
+          dstData[dstIndex + 3] = 255
         }
       }
     } else {
       console.warn(`Unsupported image encoding: ${encoding}`)
-      return ''
+      return Promise.resolve('')
     }
 
     ctx.putImageData(imageData, 0, 0)
     imageInfo.value = { width, height, encoding }
-    return canvas.toDataURL('image/png')
+    
+    // 使用 Blob URL 替代 Data URL，性能更好
+    return new Promise<string>((resolve) => {
+      canvas!.toBlob((blob) => {
+        if (blob) {
+          // 释放旧的 Blob URL
+          if (currentBlobUrl) {
+            URL.revokeObjectURL(currentBlobUrl)
+          }
+          const blobUrl = URL.createObjectURL(blob)
+          currentBlobUrl = blobUrl
+          resolve(blobUrl)
+        } else {
+          resolve('')
+        }
+      }, 'image/png')
+    })
   } catch (error) {
     console.error('Error converting image message:', error)
-    return ''
+    return Promise.resolve('')
   }
 }
 
-// 节流更新图像（每33ms最多更新一次，约30fps，避免CPU过高）
-let imageUpdateTimer: ReturnType<typeof setTimeout> | null = null
+// 节流更新图像（使用 requestAnimationFrame 优化，避免CPU过高）
+let rafId: number | null = null
 let pendingMessage: any = null
+let isProcessing = false
 
-// 监听最新消息，转换为图像URL（使用节流）
+// 监听最新消息，转换为图像URL（使用节流和 requestAnimationFrame）
 watch(() => getLatestMessage(), (message) => {
   // 保存最新消息
   pendingMessage = message
   
-  // 如果已经有待处理的更新，跳过
-  if (imageUpdateTimer !== null) {
+  // 如果正在处理或已有待处理的更新，跳过
+  if (isProcessing || rafId !== null) {
     return
   }
   
-  // 节流：每33ms最多更新一次（约30fps）
-  imageUpdateTimer = setTimeout(() => {
+  // 使用 requestAnimationFrame 优化更新时机，与浏览器渲染同步
+  rafId = requestAnimationFrame(async () => {
     const msg = pendingMessage
+    rafId = null
     
     if (msg) {
-      const dataUrl = convertImageMessageToDataURL(msg)
-      if (dataUrl) {
-        imageUrl.value = dataUrl
-      } else {
+      isProcessing = true
+      try {
+        const blobUrl = await convertImageMessageToBlobURL(msg)
+        if (blobUrl) {
+          imageUrl.value = blobUrl
+        } else {
+          imageUrl.value = ''
+          imageInfo.value = null
+        }
+      } catch (error) {
+        console.error('Error processing image:', error)
         imageUrl.value = ''
         imageInfo.value = null
+      } finally {
+        isProcessing = false
+        pendingMessage = null
       }
     } else {
       imageUrl.value = ''
       imageInfo.value = null
+      pendingMessage = null
     }
-    
-    imageUpdateTimer = null
-    pendingMessage = null
-  }, 40) // 约25fps
+  })
 }, { immediate: true })
 
 const handleImageError = () => {
@@ -226,12 +269,23 @@ const handleImageError = () => {
   imageUrl.value = ''
 }
 
-// 清理定时器
+// 清理资源
 onUnmounted(() => {
-  if (imageUpdateTimer) {
-    clearTimeout(imageUpdateTimer)
-    imageUpdateTimer = null
+  // 取消待处理的动画帧
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId)
+    rafId = null
   }
+  
+  // 释放 Blob URL
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl)
+    currentBlobUrl = null
+  }
+  
+  // 清理 canvas 引用
+  canvas = null
+  ctx = null
 })
 </script>
 
