@@ -131,7 +131,7 @@ export const useRvizStore = defineStore('rviz', () => {
   // 全局选项
   const globalOptions = reactive<GlobalOptions>({
     fixedFrame: 'map',
-    backgroundColor: '#303030',
+    backgroundColor: '#f8f7f7',
     frameRate: 30,
     defaultLight: true
   })
@@ -913,7 +913,7 @@ export const useRvizStore = defineStore('rviz', () => {
     sceneState.showDebugInfo = false
 
     // 更新全局选项
-    globalOptions.backgroundColor = '#303030'
+    globalOptions.backgroundColor = '#f8f7f7'
     globalOptions.frameRate = 30
     globalOptions.defaultLight = true
 

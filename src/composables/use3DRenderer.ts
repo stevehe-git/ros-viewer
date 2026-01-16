@@ -239,12 +239,17 @@ export function use3DRenderer(scene: THREE.Scene) {
       })
       geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3))
 
+      // Flat Squares: 使用世界单位（米），启用距离衰减
+      // Points: 使用像素大小，不启用距离衰减，需要将米转换为像素（大约乘以100）
+      const useSizeAttenuation = style === 'Flat Squares'
+      const pointSize = useSizeAttenuation ? size : Math.max(size * 100, 2) // Points 模式需要像素大小，至少2像素才能看见
+
       const material = new THREE.PointsMaterial({
-        size: size,
+        size: pointSize,
         vertexColors: true,
         transparent: true,
         opacity: alpha,
-        sizeAttenuation: false // 固定大小，不受距离影响
+        sizeAttenuation: useSizeAttenuation
       })
 
       const pointsObject = new THREE.Points(geometry, material)
@@ -271,7 +276,7 @@ export function use3DRenderer(scene: THREE.Scene) {
       sprites.forEach(sprite => spriteGroup.add(sprite))
       laserscanGroup.add(spriteGroup)
     } else {
-      // 默认使用 Points
+      // 默认使用 Points（像素大小，不启用距离衰减）
       const geometry = new THREE.BufferGeometry().setFromPoints(points)
       const colorArray = new Float32Array(points.length * 3)
       colors.forEach((color, i) => {
@@ -282,11 +287,11 @@ export function use3DRenderer(scene: THREE.Scene) {
       geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3))
 
       const material = new THREE.PointsMaterial({
-        size: size,
+        size: Math.max(size * 100, 2), // 像素大小，至少2像素才能看见
         vertexColors: true,
         transparent: true,
         opacity: alpha,
-        sizeAttenuation: false
+        sizeAttenuation: false // Points 模式使用固定像素大小
       })
 
       const pointsObject = new THREE.Points(geometry, material)
