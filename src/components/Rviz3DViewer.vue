@@ -1004,18 +1004,28 @@ watch(() => rvizStore.displayComponents, () => {
 
   // 遍历所有组件，检查数据变化并更新渲染
   rvizStore.displayComponents.forEach((component) => {
+    // 跳过不需要数据的组件（grid, axes）
+    if (component.type === 'grid' || component.type === 'axes') {
+      return
+    }
+
+    // 如果组件未启用，跳过
+    if (!component.enabled) {
+      return
+    }
+
     // 直接从统一订阅管理器获取数据（单一数据源）
     const data = rvizStore.getComponentData(component.id)
     const subscriptionStatus = rvizStore.getComponentSubscriptionStatus(component.id)
     
     if (data && subscriptionStatus?.hasData && renderer3D) {
-      // 使用 3D 渲染器更新渲染
+      // 使用 3D 渲染器更新渲染（配置更新时重新渲染以应用新配置）
       renderer3D.updateComponentRender(component.id, component.type, data)
       // 更新可见性
       updateComponentVisibility(component.id, component.type)
     } else if (renderer3D) {
-      // 没有数据时隐藏
-      renderer3D.setComponentVisibility(component.type, false)
+      // 没有数据时隐藏（但需要传递 componentId 以避免隐藏其他组件）
+      renderer3D.setComponentVisibility(component.type, false, component.id)
     }
   })
 }, { deep: true })
