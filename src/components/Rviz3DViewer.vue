@@ -154,8 +154,8 @@ const initScene = () => {
   controls = new OrbitControls(camera, renderer.domElement)
   controls.enableDamping = true
   controls.dampingFactor = 0.05
-  controls.minDistance = 2
-  controls.maxDistance = 100
+  controls.minDistance = 0.01  // 允许无限放大（接近0但不为0，避免数值问题）
+  controls.maxDistance = Infinity  // 允许无限缩小
   controls.maxPolarAngle = Math.PI / 2
   
   // 配置鼠标按钮：左键旋转，中键平移
