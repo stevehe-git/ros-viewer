@@ -1090,7 +1090,20 @@ watch(() => rvizStore.displayComponents, () => {
   // 遍历所有组件，检查数据变化并更新渲染
   rvizStore.displayComponents.forEach((component) => {
     // 跳过不需要数据的组件（grid, axes）
+    // TF 组件从 tfManager 获取数据，不需要从订阅管理器获取
     if (component.type === 'grid' || component.type === 'axes') {
+      return
+    }
+
+    // TF 组件特殊处理：从 tfManager 获取数据
+    if (component.type === 'tf') {
+      if (component.enabled && renderer3D) {
+        // TF 数据从 tfManager 实时获取，不需要传入 message
+        renderer3D.updateComponentRender(component.id, component.type, {})
+        updateComponentVisibility(component.id, component.type)
+      } else if (renderer3D) {
+        renderer3D.setComponentVisibility(component.type, false, component.id)
+      }
       return
     }
 
@@ -1126,6 +1139,13 @@ watch(() => rvizStore.robotConnection.connected, (connected) => {
       
       rvizStore.displayComponents.forEach((component) => {
         if (component.enabled) {
+          // TF 组件特殊处理：从 tfManager 获取数据
+          if (component.type === 'tf') {
+            renderer3D.updateComponentRender(component.id, component.type, {})
+            updateComponentVisibility(component.id, component.type)
+            return
+          }
+          
           const data = rvizStore.getComponentData(component.id)
           const subscriptionStatus = rvizStore.getComponentSubscriptionStatus(component.id)
           

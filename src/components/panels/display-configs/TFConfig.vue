@@ -149,13 +149,15 @@
         </div>
       </div>
     </div>
+
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRvizStore } from '@/stores/rviz'
 import { ArrowRight } from '@element-plus/icons-vue'
+import { tfManager } from '@/services/tfManager'
 
 interface Props {
   componentId: string
@@ -165,36 +167,26 @@ interface Props {
 const props = defineProps<Props>()
 const rvizStore = useRvizStore()
 
-const framesExpanded = ref(true)
+const framesExpanded = ref(false)
 
-// 默认frames列表（基于图片中的frames）
-const defaultFrames = [
-  { name: 'base_footprint', enabled: true },
-  { name: 'base_link', enabled: true },
-  { name: 'base_scan', enabled: true },
-  { name: 'camera_link', enabled: true },
-  { name: 'camera_rgb_frame', enabled: true },
-  { name: 'camera_rgb_optical_frame', enabled: true },
-  { name: 'caster_back_left_link', enabled: true },
-  { name: 'caster_back_right_link', enabled: true },
-  { name: 'imu_link', enabled: true },
-  { name: 'map', enabled: true },
-  { name: 'odom', enabled: true },
-  { name: 'wheel_left_link', enabled: true },
-  { name: 'wheel_right_link', enabled: true }
-]
-
-// 从options中获取frames列表，如果没有则使用默认列表
+// 从options中获取frames列表，如果没有则从tfManager获取
 const frames = computed(() => {
   if (props.options.frames && Array.isArray(props.options.frames) && props.options.frames.length > 0) {
     return props.options.frames
   }
-  return defaultFrames
+  
+  // 从tfManager获取frames列表
+  const frameNames = tfManager.getFrames()
+  
+  return frameNames.map(name => ({
+    name,
+    enabled: props.options.frames?.find((f: any) => f.name === name)?.enabled ?? true
+  }))
 })
 
 // 计算所有frames是否都启用
 const allFramesEnabled = computed(() => {
-  return frames.value.every(frame => frame.enabled)
+  return frames.value.length > 0 && frames.value.every(frame => frame.enabled)
 })
 
 const toggleFrames = () => {
@@ -219,6 +211,13 @@ const handleFrameEnabledChange = (frameName: string, enabled: boolean) => {
 const update = (key: string, value: any) => {
   rvizStore.updateComponentOptions(props.componentId, { [key]: value })
 }
+
+// 监听 frameTimeout 变化，更新 tfManager
+watch(() => props.options.frameTimeout, (timeout) => {
+  if (timeout !== undefined) {
+    tfManager.setFrameTimeout(timeout)
+  }
+}, { immediate: true })
 </script>
 
 <style scoped>

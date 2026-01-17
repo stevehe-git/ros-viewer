@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import { ref, watch } from 'vue'
 import { useRvizStore } from '@/stores/rviz'
 import { DataConverter } from '@/services/dataConverter'
+import { tfManager } from '@/services/tfManager'
 
 export interface RendererObjects {
   mapMesh?: THREE.Mesh
@@ -17,6 +18,7 @@ export interface RendererObjects {
   pointcloudMesh?: THREE.Mesh
   pointcloudPoints?: THREE.Points
   pointcloudGroup?: THREE.Group // 支持多个 PointCloud2 组件
+  tfGroup?: THREE.Group // TF 可视化组
   [key: string]: any
 }
 
@@ -580,6 +582,257 @@ export function use3DRenderer(scene: THREE.Scene) {
   }
 
   /**
+   * 更新 TF 渲染
+   */
+  function updateTFRender(componentId: string) {
+    // 获取组件配置
+    const component = rvizStore.displayComponents.find(c => c.id === componentId)
+    if (!component) return
+
+    const options = component.options || {}
+    const showNames = options.showNames ?? true
+    const showAxes = options.showAxes ?? true
+    const showArrows = options.showArrows ?? true
+    const markerScale = options.markerScale ?? 1
+    const markerAlpha = options.markerAlpha ?? 1
+    const enabledFrames = new Set<string>()
+    
+    // 获取启用的 frames
+    if (options.frames && Array.isArray(options.frames)) {
+      options.frames.forEach((frame: any) => {
+        if (frame.enabled) {
+          enabledFrames.add(frame.name)
+        }
+      })
+    }
+
+    // 创建或获取 TF 组
+    let tfGroup = renderObjects.value.tfGroup
+    if (!tfGroup) {
+      tfGroup = new THREE.Group()
+      renderObjects.value.tfGroup = tfGroup
+      scene.add(tfGroup)
+    }
+
+    // 清除旧的 TF 对象
+    tfGroup.clear()
+
+    // 从 tfManager 获取变换数据
+    const transforms = tfManager.getTransforms()
+    const tfTree = tfManager.getTFTree()
+
+    // 存储所有 frame 的位置（用于绘制连接线）
+    const framePositions = new Map<string, THREE.Vector3>()
+
+    // 递归渲染 TF 树
+    const renderTFFrame = (node: any, parentWorldTransform?: THREE.Matrix4) => {
+      if (!enabledFrames.has(node.name)) return
+
+      // 查找该 frame 相对于父 frame 的变换
+      let localTransform = new THREE.Matrix4().identity()
+      
+      if (node.parent && transforms.has(node.parent)) {
+        const parentTransforms = transforms.get(node.parent)!
+        const transform = parentTransforms.get(node.name)
+        
+        if (transform && transform.translation && transform.rotation) {
+          // ROS 坐标系：X向前，Y向左，Z向上
+          // THREE.js 坐标系：X向右，Y向上，Z向前
+          // 转换 ROS translation 到 THREE.js
+          const rosX = transform.translation.x
+          const rosY = transform.translation.y
+          const rosZ = transform.translation.z
+          
+          // ROS (x, y, z) → THREE.js (x, y, z)
+          // ROS X (向前) → THREE.js Z
+          // ROS Y (向左) → THREE.js -X
+          // ROS Z (向上) → THREE.js Y
+          const threeX = -rosY
+          const threeY = rosZ
+          const threeZ = rosX
+          
+          // 转换 ROS quaternion 到 THREE.js
+          // ROS quaternion: (x, y, z, w)
+          // THREE.js quaternion: (x, y, z, w)
+          const rosQx = transform.rotation.x
+          const rosQy = transform.rotation.y
+          const rosQz = transform.rotation.z
+          const rosQw = transform.rotation.w
+          
+          // 创建 ROS quaternion
+          const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
+          
+          // ROS 到 THREE.js 的坐标转换
+          // ROS: X向前，Y向左，Z向上
+          // THREE.js: X向右，Y向上，Z向前
+          // 需要将 ROS 的旋转转换到 THREE.js 坐标系
+          // 方法：先绕Y轴旋转-90度（使ROS的X对应THREE.js的Z），然后应用ROS旋转
+          const coordRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+          const threeQuat = new THREE.Quaternion()
+          threeQuat.multiplyQuaternions(coordRot, rosQuat)
+          
+          // 构建变换矩阵
+          localTransform.compose(
+            new THREE.Vector3(threeX, threeY, threeZ),
+            threeQuat,
+            new THREE.Vector3(1, 1, 1)
+          )
+        }
+      }
+
+      // 计算世界坐标变换
+      let worldTransform = localTransform.clone()
+      if (parentWorldTransform) {
+        worldTransform = parentWorldTransform.clone().multiply(localTransform)
+      }
+
+      // 提取位置和旋转
+      const position = new THREE.Vector3()
+      const quaternion = new THREE.Quaternion()
+      const scale = new THREE.Vector3(1, 1, 1)
+      worldTransform.decompose(position, quaternion, scale)
+      
+      // 存储位置（用于绘制连接线）
+      framePositions.set(node.name, position.clone())
+
+      // 创建 frame 组
+      const frameGroup = new THREE.Group()
+      frameGroup.position.copy(position)
+      frameGroup.quaternion.copy(quaternion)
+      frameGroup.userData.frameName = node.name
+      frameGroup.userData.componentId = componentId
+
+      // 显示坐标轴（红色X、绿色Y、蓝色Z）
+      if (showAxes) {
+        const axisLength = 0.3 * markerScale
+        
+        // X轴（红色）- THREE.js X方向
+        const xGeometry = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(axisLength, 0, 0)
+        ])
+        const xMaterial = new THREE.LineBasicMaterial({ 
+          color: 0xff0000, 
+          transparent: true, 
+          opacity: markerAlpha 
+        })
+        const xAxis = new THREE.Line(xGeometry, xMaterial)
+        frameGroup.add(xAxis)
+
+        // Y轴（绿色）- THREE.js Y方向
+        const yGeometry = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, axisLength, 0)
+        ])
+        const yMaterial = new THREE.LineBasicMaterial({ 
+          color: 0x00ff00, 
+          transparent: true, 
+          opacity: markerAlpha 
+        })
+        const yAxis = new THREE.Line(yGeometry, yMaterial)
+        frameGroup.add(yAxis)
+
+        // Z轴（蓝色）- THREE.js Z方向
+        const zGeometry = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, 0, axisLength)
+        ])
+        const zMaterial = new THREE.LineBasicMaterial({ 
+          color: 0x0000ff, 
+          transparent: true, 
+          opacity: markerAlpha 
+        })
+        const zAxis = new THREE.Line(zGeometry, zMaterial)
+        frameGroup.add(zAxis)
+      }
+
+      // 显示名称（使用 CSS2DRenderer 或 Canvas 纹理）
+      if (showNames) {
+        // 创建文本标签（使用 Canvas 纹理）
+        const canvas = document.createElement('canvas')
+        const context = canvas.getContext('2d')!
+        canvas.width = 256
+        canvas.height = 64
+        
+        context.fillStyle = 'rgba(255, 255, 255, ' + markerAlpha + ')'
+        context.font = 'Bold 24px Arial'
+        context.fillText(node.name, 10, 40)
+        
+        const texture = new THREE.CanvasTexture(canvas)
+        const spriteMaterial = new THREE.SpriteMaterial({
+          map: texture,
+          transparent: true,
+          opacity: markerAlpha
+        })
+        const sprite = new THREE.Sprite(spriteMaterial)
+        sprite.scale.set(0.5 * markerScale, 0.125 * markerScale, 1)
+        sprite.position.set(0, 0.2 * markerScale, 0)
+        sprite.userData.frameName = node.name
+        frameGroup.add(sprite)
+      }
+
+      tfGroup.add(frameGroup)
+
+      // 递归渲染子节点
+      if (node.children && node.children.length > 0) {
+        node.children.forEach((child: any) => {
+          renderTFFrame(child, worldTransform)
+        })
+      }
+    }
+
+    // 渲染所有根节点
+    tfTree.forEach(rootNode => {
+      renderTFFrame(rootNode)
+    })
+
+    // 绘制连接线（从父到子）
+    if (showArrows) {
+      tfTree.forEach(rootNode => {
+        const drawConnections = (node: any) => {
+          if (!enabledFrames.has(node.name)) return
+          
+          const parentPos = framePositions.get(node.name)
+          if (!parentPos) return
+
+          if (node.children && node.children.length > 0) {
+            node.children.forEach((child: any) => {
+              if (!enabledFrames.has(child.name)) return
+              
+              const childPos = framePositions.get(child.name)
+              if (!childPos) return
+
+              // 绘制从父到子的连接线
+              const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+                parentPos,
+                childPos
+              ])
+              const lineMaterial = new THREE.LineBasicMaterial({
+                color: 0xffff00, // 黄色连接线
+                transparent: true,
+                opacity: markerAlpha * 0.5,
+                linewidth: 2
+              })
+              const connectionLine = new THREE.Line(lineGeometry, lineMaterial)
+              connectionLine.userData.componentId = componentId
+              tfGroup.add(connectionLine)
+
+              // 递归绘制子节点的连接
+              drawConnections(child)
+            })
+          }
+        }
+        drawConnections(rootNode)
+      })
+    }
+
+    // 渲染所有根节点
+    tfTree.forEach(rootNode => {
+      renderTFFrame(rootNode)
+    })
+  }
+
+  /**
    * 从字节数组中读取 Float32
    */
   const readFloat32 = (data: Uint8Array, offset: number): number => {
@@ -634,6 +887,9 @@ export function use3DRenderer(scene: THREE.Scene) {
         break
       case 'pointcloud2':
         updatePointCloudRender(componentId, unifiedMessage.data)
+        break
+      case 'tf':
+        updateTFRender(componentId)
         break
       default:
         break
