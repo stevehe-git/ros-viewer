@@ -334,13 +334,23 @@ const updateGridHelper = () => {
   }
 
   // 设置位置偏移
-  if (options.offsetX || options.offsetY || options.offsetZ) {
-    gridHelper.position.set(
-      options.offsetX || 0,
-      options.offsetY || 0,
-      options.offsetZ || 0
-    )
-  }
+  // 坐标转换：ROS坐标系 → THREE.js坐标系
+  // - ROS X轴 (向前) → THREE.js Z轴
+  // - ROS Y轴 (向左) → THREE.js -X轴
+  // - ROS Z轴 (向上) → THREE.js Y轴
+  const offsetX = options.offsetX || 0
+  const offsetY = options.offsetY || 0
+  const offsetZ = options.offsetZ || 0
+  
+  // ROS (offsetX, offsetY, offsetZ) → THREE.js (x, y, z)
+  // ROS X (向前) → THREE.js Z
+  // ROS Y (向左) → THREE.js -X
+  // ROS Z (向上) → THREE.js Y
+  gridHelper.position.set(
+    -offsetY,  // ROS Y (向左) → THREE.js -X
+    offsetZ,   // ROS Z (向上) → THREE.js Y
+    offsetX    // ROS X (向前) → THREE.js Z
+  )
 
   scene.add(gridHelper)
   gridHelper.visible = rvizStore.sceneState.showGrid
