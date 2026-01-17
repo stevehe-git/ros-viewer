@@ -180,9 +180,10 @@ export function use3DRenderer(scene: THREE.Scene) {
       // ROS X (向前) → THREE.js Z
       // ROS Y (向左) → THREE.js -X
       // ROS Z (向上) → THREE.js Y
-      const threeX = -rosY  // ROS Y (向左) → THREE.js -X
-      const threeY = rosZ   // ROS Z (向上) → THREE.js Y
-      const threeZ = rosX   // ROS X (向前) → THREE.js Z
+          // 右手系：Y轴绕Z轴旋转180度，从-X变成+X
+          const threeX = rosY   // ROS Y (向右，右手系) → THREE.js +X
+          const threeY = rosZ   // ROS Z (向上) → THREE.js Y
+          const threeZ = rosX   // ROS X (向前) → THREE.js Z
 
       points.push(new THREE.Vector3(threeX, threeY, threeZ))
 
@@ -455,9 +456,10 @@ export function use3DRenderer(scene: THREE.Scene) {
       // - ROS X (向前) → THREE.js Z (向前)
       // - ROS Y (向左) → THREE.js -X (向左)
       // - ROS Z (向上) → THREE.js Y (向上)
-      const threeX = -rosY  // ROS Y (向左) → THREE.js -X
-      const threeY = rosZ   // ROS Z (向上) → THREE.js Y
-      const threeZ = rosX   // ROS X (向前) → THREE.js Z
+          // 右手系：Y轴绕Z轴旋转180度，从-X变成+X
+          const threeX = rosY   // ROS Y (向右，右手系) → THREE.js +X
+          const threeY = rosZ   // ROS Z (向上) → THREE.js Y
+          const threeZ = rosX   // ROS X (向前) → THREE.js Z
 
       points.push(new THREE.Vector3(threeX, threeY, threeZ))
 
@@ -725,9 +727,12 @@ export function use3DRenderer(scene: THREE.Scene) {
           const rosQw = transform.rotation.w
 
           const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
-          const coordRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+          // 右手系坐标转换：先绕Y轴旋转-90度，然后绕Z轴旋转180度（Y轴从-X变成+X）
+          const coordRotY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+          const coordRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI) // 绕Z轴旋转180度
           const threeQuat = new THREE.Quaternion()
-          threeQuat.multiplyQuaternions(coordRot, rosQuat)
+          threeQuat.multiplyQuaternions(coordRotZ, coordRotY)
+          threeQuat.multiplyQuaternions(threeQuat, rosQuat)
 
           const localTransform = new THREE.Matrix4()
           localTransform.compose(
@@ -770,9 +775,12 @@ export function use3DRenderer(scene: THREE.Scene) {
           const rosQw = transform.rotation.w
 
           const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
-          const coordRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+          // 右手系坐标转换：先绕Y轴旋转-90度，然后绕Z轴旋转180度（Y轴从-X变成+X）
+          const coordRotY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+          const coordRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI) // 绕Z轴旋转180度
           const threeQuat = new THREE.Quaternion()
-          threeQuat.multiplyQuaternions(coordRot, rosQuat)
+          threeQuat.multiplyQuaternions(coordRotZ, coordRotY)
+          threeQuat.multiplyQuaternions(threeQuat, rosQuat)
 
           const localTransform = new THREE.Matrix4()
           localTransform.compose(
@@ -922,14 +930,14 @@ export function use3DRenderer(scene: THREE.Scene) {
         frameGroup.userData.frameName = node.name
         frameGroup.userData.componentId = componentId
 
-        // 显示坐标轴（红色X、绿色Y、蓝色Z）
+        // 显示坐标轴（红色X、绿色Y、蓝色Z）- 右手系
         if (showAxes) {
           const axisLength = 0.3 * markerScale
           
-          // X轴（红色）- THREE.js X方向
+          // X轴（红色）- ROS X 向前，对应 THREE.js Z 方向
           const xGeometry = new THREE.BufferGeometry().setFromPoints([
             new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(axisLength, 0, 0)
+            new THREE.Vector3(0, 0, axisLength)
           ])
           const xMaterial = new THREE.LineBasicMaterial({ 
             color: 0xff0000, 
@@ -939,10 +947,10 @@ export function use3DRenderer(scene: THREE.Scene) {
           const xAxis = new THREE.Line(xGeometry, xMaterial)
           frameGroup.add(xAxis)
 
-          // Y轴（绿色）- THREE.js Y方向
+          // Y轴（绿色）- ROS Y 向右（右手系），对应 THREE.js +X 方向（绕Z轴旋转180度）
           const yGeometry = new THREE.BufferGeometry().setFromPoints([
             new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(0, axisLength, 0)
+            new THREE.Vector3(axisLength, 0, 0)
           ])
           const yMaterial = new THREE.LineBasicMaterial({ 
             color: 0x00ff00, 
@@ -952,10 +960,10 @@ export function use3DRenderer(scene: THREE.Scene) {
           const yAxis = new THREE.Line(yGeometry, yMaterial)
           frameGroup.add(yAxis)
 
-          // Z轴（蓝色）- THREE.js Z方向
+          // Z轴（蓝色）- ROS Z 向上，对应 THREE.js Y 方向
           const zGeometry = new THREE.BufferGeometry().setFromPoints([
             new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(0, 0, axisLength)
+            new THREE.Vector3(0, axisLength, 0)
           ])
           const zMaterial = new THREE.LineBasicMaterial({ 
             color: 0x0000ff, 

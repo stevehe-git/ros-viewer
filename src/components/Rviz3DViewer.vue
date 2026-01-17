@@ -375,9 +375,9 @@ const updateAxesHelper = () => {
   // 创建自定义坐标轴，支持设置半径
   axesHelper = new THREE.Group()
 
-  // ROS/RViz 坐标系统：
+  // ROS/RViz 坐标系统（右手系）：
   // - X轴 (红色) - 向前（THREE.js的Z方向）
-  // - Y轴 (绿色) - 向左（THREE.js的-X方向）
+  // - Y轴 (绿色) - 向右（THREE.js的+X方向，绕Z轴旋转180度从-X变成+X）
   // - Z轴 (蓝色) - 向上（THREE.js的Y方向）
   
   // X轴 (红色) - ROS X 向前，对应 THREE.js Z 方向
@@ -388,12 +388,13 @@ const updateAxesHelper = () => {
   xAxis.position.z = length / 2 // THREE.js Z 方向
   axesHelper.add(xAxis)
 
-  // Y轴 (绿色) - ROS Y 向左，对应 THREE.js -X 方向
+  // Y轴 (绿色) - ROS Y 向右（右手系），对应 THREE.js +X 方向（绕Z轴旋转180度）
   const yGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
   const yMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
   const yAxis = new THREE.Mesh(yGeometry, yMaterial)
-  yAxis.rotation.z = Math.PI / 2 // 旋转到-X轴方向（THREE.js）
-  yAxis.position.x = -length / 2 // THREE.js -X 方向（向左）
+  yAxis.rotation.z = Math.PI / 2 // 旋转到X轴方向（THREE.js）
+  yAxis.rotation.z += Math.PI // 绕Z轴旋转180度，从-X变成+X（右手系）
+  yAxis.position.x = length / 2 // THREE.js +X 方向（向右）
   axesHelper.add(yAxis)
 
   // Z轴 (蓝色) - ROS Z 向上，对应 THREE.js Y 方向
