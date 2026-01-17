@@ -246,6 +246,7 @@ const updateGridHelper = () => {
   const cellSize = options.cellSize || 1
   const planeCellCount = options.planeCellCount || 10
   const color = options.color || '#a0a0a4'
+  const plane = options.plane || 'XY'
 
   // 将颜色字符串转换为Three.js颜色
   const threeColor = new THREE.Color(color)
@@ -261,6 +262,28 @@ const updateGridHelper = () => {
   if (options.alpha !== undefined) {
     gridHelper.material.transparent = true
     gridHelper.material.opacity = options.alpha
+  }
+
+  // 根据 plane 参数设置网格方向
+  // THREE.GridHelper 默认在 XY 平面（X轴向右，Y轴向上，Z轴向前）
+  // 平面定义：
+  // - XY: X轴和Y轴在网格平面上，Z轴垂直（默认，不需要旋转）
+  // - XZ: X轴和Z轴在网格平面上，Y轴垂直（绕X轴旋转-90度）
+  // - YZ: Y轴和Z轴在网格平面上，X轴垂直（绕Y轴旋转90度）
+  gridHelper.rotation.set(0, 0, 0)
+  switch (plane) {
+    case 'XY':
+      // 默认平面，不需要旋转（X和Y在网格上，Z垂直）
+      gridHelper.rotation.set(0, 0, 0)
+      break
+    case 'XZ':
+      // 绕 X 轴旋转 -90 度，使网格在XZ平面（X和Z在网格上，Y垂直）
+      gridHelper.rotation.set(-Math.PI / 2, 0, 0)
+      break
+    case 'YZ':
+      // 绕 Y 轴旋转 90 度，使网格在YZ平面（Y和Z在网格上，X垂直）
+      gridHelper.rotation.set(0, Math.PI / 2, 0)
+      break
   }
 
   // 设置位置偏移
