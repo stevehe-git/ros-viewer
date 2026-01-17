@@ -614,7 +614,47 @@ export function use3DRenderer(scene: THREE.Scene) {
       scene.add(tfGroup)
     }
 
-    // 清除旧的 TF 对象
+    // 正确清理旧的 TF 对象：先 dispose 所有 WebGL 资源，再清除
+    // 这是根治内存泄漏的关键：tfGroup.clear() 不会自动 dispose WebGL 资源
+    const disposeObject = (obj: THREE.Object3D) => {
+      if (obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.Points) {
+        // 清理 geometry
+        if (obj.geometry) {
+          obj.geometry.dispose()
+        }
+        // 清理 material
+        if (obj.material) {
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach((mat) => {
+              if (mat.map) mat.map.dispose()
+              mat.dispose()
+            })
+          } else {
+            if (obj.material.map) obj.material.map.dispose()
+            obj.material.dispose()
+          }
+        }
+      } else if (obj instanceof THREE.Sprite) {
+        // 清理 sprite 的 material 和 texture
+        if (obj.material) {
+          const spriteMat = obj.material as THREE.SpriteMaterial
+          if (spriteMat.map) {
+            spriteMat.map.dispose()
+          }
+          spriteMat.dispose()
+        }
+      } else if (obj instanceof THREE.Group) {
+        // 递归清理 Group 的子对象
+        const children = [...obj.children]
+        children.forEach(child => disposeObject(child))
+      }
+    }
+    
+    // 遍历并清理所有子对象
+    const childrenToDispose = [...tfGroup.children]
+    childrenToDispose.forEach(child => disposeObject(child))
+    
+    // 现在可以安全地清除（所有资源已释放）
     tfGroup.clear()
 
     // 从 tfManager 获取变换数据
