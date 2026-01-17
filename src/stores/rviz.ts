@@ -590,12 +590,39 @@ export const useRvizStore = defineStore('rviz', () => {
       
       // 在连接成功后初始化 TF 管理器（延迟一点确保 ROS 实例已准备好）
       if (protocol === 'ros' && currentPlugin) {
+        console.log('RViz: About to initialize TFManager', { 
+          protocol, 
+          hasPlugin: !!currentPlugin,
+          pluginType: currentPlugin.constructor?.name,
+          hasGetROSInstance: typeof (currentPlugin as any).getROSInstance === 'function'
+        })
         setTimeout(() => {
+          console.log('RViz: setTimeout callback executed')
+          console.log('RViz: currentPlugin at timeout', currentPlugin)
           const rosInstance = (currentPlugin as any).getROSInstance?.()
-          if (rosInstance && rosInstance.isConnected) {
-            tfManager.setROSInstance(rosInstance)
+          console.log('RViz: TFManager get ROS instance', rosInstance)
+          console.log('RViz: TFManager get ROS instance type', typeof rosInstance)
+          console.log('RViz: TFManager rosInstance is truthy?', !!rosInstance)
+          if (rosInstance) {
+            // 直接设置 TFManager，让它自己处理连接检查
+            // TFManager 的 setROSInstance 方法会检查连接状态
+            console.log('RViz: Setting TFManager ROS instance...')
+            try {
+              tfManager.setROSInstance(rosInstance)
+              console.log('RViz: TFManager set ROS instance successfully')
+            } catch (error) {
+              console.error('RViz: TFManager error setting ROS instance', error)
+            }
+          } else {
+            console.warn('RViz: TFManager ROS instance is null or undefined', {
+              currentPlugin: currentPlugin,
+              hasGetROSInstance: typeof (currentPlugin as any).getROSInstance === 'function',
+              getROSInstanceResult: (currentPlugin as any).getROSInstance?.()
+            })
           }
         }, 100)
+      } else {
+        console.log('RViz: TFManager initialization skipped', { protocol, hasPlugin: !!currentPlugin })
       }
 
       return true

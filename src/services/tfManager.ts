@@ -3,7 +3,7 @@
  * 监听 tf2-ros 发布的坐标变换，维护可用的坐标系列表
  */
 import * as ROSLIB from 'roslib'
-import { ref, watch } from 'vue'
+import { ref, toRaw } from 'vue'
 
 export interface TransformFrame {
   name: string
@@ -13,8 +13,8 @@ export interface TransformFrame {
 
 class TFManager {
   private rosInstance: ROSLIB.Ros | null = null
-  private tfTopic: ROSLIB.Topic | null = null
-  private tfStaticTopic: ROSLIB.Topic | null = null
+  private tfTopic: ROSLIB.Topic<any> | null = null
+  private tfStaticTopic: ROSLIB.Topic<any> | null = null
   
   // 可用的坐标系列表（响应式）
   private availableFrames = ref<Set<string>>(new Set())
@@ -32,15 +32,30 @@ class TFManager {
     // 先取消之前的订阅
     this.unsubscribe()
     
-    this.rosInstance = ros
+    // 使用 toRaw 获取原始对象，避免代理对象访问私有成员的问题
+    const rawRos = ros ? toRaw(ros) : null
+    this.rosInstance = rawRos
     
-    if (ros) {
+    console.log('TFManager: setROSInstance', ros)
+    if (rawRos) {
+      // 安全地检查连接状态
+      let isConnected = false
+      try {
+        isConnected = rawRos.isConnected === true
+        console.log('TFManager: ros.isConnected', isConnected)
+      } catch (error) {
+        // 如果访问 isConnected 失败，假设已连接（因为我们已经成功连接了）
+        console.warn('TFManager: Could not check ROS connection status, assuming connected', error)
+        isConnected = true
+      }
+      
       // 检查连接状态，如果已连接则立即订阅，否则等待连接事件
-      if (ros.isConnected) {
+      if (isConnected) {
+        console.log('TFManager: ROS is connected, subscribing to TF topics')
         this.subscribe()
       } else {
         // 等待连接事件
-        ros.on('connection', () => {
+        rawRos.on('connection', () => {
           this.subscribe()
         })
       }
@@ -66,6 +81,7 @@ class TFManager {
       })
 
       this.tfTopic.subscribe((message: any) => {
+        // console.log('TFManager: Received /tf message', message)
         if (message && message.transforms && Array.isArray(message.transforms)) {
           message.transforms.forEach((transform: any) => {
             if (transform.header && transform.header.frame_id) {
@@ -93,6 +109,7 @@ class TFManager {
       })
 
       this.tfStaticTopic.subscribe((message: any) => {
+        // console.log('TFManager: Received /tf_static message', message)
         if (message && message.transforms && Array.isArray(message.transforms)) {
           message.transforms.forEach((transform: any) => {
             if (transform.header && transform.header.frame_id) {
