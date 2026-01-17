@@ -200,7 +200,7 @@ export function use3DRenderer(scene: THREE.Scene) {
       return
     }
     
-    console.log('LaserScan: Processing', { componentId, pointsCount: points.length, style, size, alpha })
+    // console.log('LaserScan: Processing', { componentId, pointsCount: points.length, style, size, alpha })
 
     // 计算强度边界
     const finalMinIntensity = autocomputeIntensityBounds ? intensityMin : minIntensity
@@ -293,7 +293,7 @@ export function use3DRenderer(scene: THREE.Scene) {
       const pointsObject = new THREE.Points(geometry, material)
       pointsObject.userData.componentId = componentId
       laserscanGroup.add(pointsObject)
-      console.log('LaserScan: Added points to scene', { componentId, pointsCount: points.length, pointSize, useSizeAttenuation, visible: pointsObject.visible, position: pointsObject.position })
+      // console.log('LaserScan: Added points to scene', { componentId, pointsCount: points.length, pointSize, useSizeAttenuation, visible: pointsObject.visible, position: pointsObject.position })
     } else if (style === 'Billboards') {
       // 使用 Sprite 渲染（类似广告牌效果）
       const sprites: THREE.Sprite[] = []

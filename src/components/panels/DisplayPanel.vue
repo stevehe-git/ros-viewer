@@ -24,12 +24,21 @@
           <div v-show="expandedItems['global-options']" class="display-item-content">
             <div class="config-row">
               <span class="config-label">Fixed Frame</span>
-              <el-input
+              <el-select
                 v-model="globalOptions.fixedFrame"
                 size="small"
                 class="config-value"
                 @change="updateGlobalOptions"
-              />
+                filterable
+                placeholder="Select frame"
+              >
+                <el-option
+                  v-for="frame in availableFrames"
+                  :key="frame"
+                  :label="frame"
+                  :value="frame"
+                />
+              </el-select>
             </div>
             <div class="config-row">
               <span class="config-label">Background Color</span>
@@ -126,7 +135,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import {
   Setting,
   Warning,
@@ -136,6 +145,7 @@ import { ElMessageBox } from 'element-plus'
 import { useRvizStore } from '@/stores/rviz'
 import DisplayComponent from './DisplayComponent.vue'
 import DisplayTypeSelector from './DisplayTypeSelector.vue'
+import { tfManager } from '@/services/tfManager'
 
 // 使用RViz store
 const rvizStore = useRvizStore()
@@ -153,6 +163,12 @@ const showTypeSelector = ref(false)
 const selectedItem = computed(() => rvizStore.selectedItem)
 const displayComponents = computed(() => rvizStore.displayComponents)
 const globalOptions = computed(() => rvizStore.globalOptions)
+
+// 获取可用的坐标系列表（响应式）
+const availableFrames = computed(() => {
+  const frames = tfManager.getFramesRef().value
+  return frames.length > 0 ? frames : ['map', 'odom', 'base_link', 'base_footprint']
+})
 
 // 方法
 const toggleItem = (itemId: string) => {

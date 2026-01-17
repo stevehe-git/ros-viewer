@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
 import { PluginRegistry } from '@/plugins/communication'
 import { topicSubscriptionManager } from '@/services/topicSubscriptionManager'
+import { tfManager } from '@/services/tfManager'
 
 // Display组件配置接口
 export interface DisplayComponentData {
@@ -586,6 +587,16 @@ export const useRvizStore = defineStore('rviz', () => {
 
       // 最后设置连接状态，这会触发 watch 订阅话题
       robotConnection.connected = true
+      
+      // 在连接成功后初始化 TF 管理器（延迟一点确保 ROS 实例已准备好）
+      if (protocol === 'ros' && currentPlugin) {
+        setTimeout(() => {
+          const rosInstance = (currentPlugin as any).getROSInstance?.()
+          if (rosInstance && rosInstance.isConnected) {
+            tfManager.setROSInstance(rosInstance)
+          }
+        }, 100)
+      }
 
       return true
     } catch (error) {
@@ -609,6 +620,9 @@ export const useRvizStore = defineStore('rviz', () => {
       topicSubscriptionManager.unsubscribeAll()
       topicSubscriptionManager.clearAllCache()
       topicSubscriptionManager.setROSPlugin(null)
+      
+      // 清理 TF 管理器
+      tfManager.cleanup()
     } catch (error) {
       console.error('Robot disconnection failed:', error)
     }
@@ -971,6 +985,9 @@ export const useRvizStore = defineStore('rviz', () => {
     savePanelConfig,
     loadComponents,
     loadGlobalOptions,
-    loadPanelConfig
+    loadPanelConfig,
+    // TF 管理器相关
+    getTFFrames: () => tfManager.getFrames(),
+    getTFFramesRef: () => tfManager.getFramesRef()
   }
 })
