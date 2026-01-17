@@ -673,9 +673,8 @@ export function use3DRenderer(scene: THREE.Scene) {
         return new THREE.Matrix4().identity()
       }
 
-      // 查找从 fixedFrame 到 frameName 的路径
-      const path: string[] = []
-      const findPath = (current: string, target: string, visited: Set<string>): boolean => {
+      // 查找路径的辅助函数（从 current 向下查找 target）
+      const findPath = (current: string, target: string, visited: Set<string>, path: string[]): boolean => {
         if (current === target) {
           path.push(current)
           return true
@@ -687,7 +686,7 @@ export function use3DRenderer(scene: THREE.Scene) {
         for (const [parent, children] of transforms.entries()) {
           if (parent === current) {
             for (const [childName, transform] of children.entries()) {
-              if (findPath(childName, target, visited)) {
+              if (findPath(childName, target, visited, path)) {
                 path.push(current)
                 return true
               }
@@ -697,49 +696,98 @@ export function use3DRenderer(scene: THREE.Scene) {
         return false
       }
 
-      if (!findPath(fixedFrame, frameName, new Set())) {
-        return null
+      // 尝试从 fixedFrame 向下查找路径到 frameName（frameName 是 fixedFrame 的子节点）
+      const pathDown: string[] = []
+      const foundDown = findPath(fixedFrame, frameName, new Set(), pathDown)
+
+      if (foundDown) {
+        // 沿着路径累积变换（从 fixedFrame 到 frameName）
+        let result = new THREE.Matrix4().identity()
+        for (let i = pathDown.length - 1; i > 0; i--) {
+          const parent = pathDown[i]
+          const child = pathDown[i - 1]
+          if (!parent || !child) continue
+          const parentTransforms = transforms.get(parent)
+          if (!parentTransforms) continue
+          const transform = parentTransforms.get(child)
+          if (!transform || !transform.translation || !transform.rotation) continue
+
+          const rosX = transform.translation.x
+          const rosY = transform.translation.y
+          const rosZ = transform.translation.z
+          const threeX = -rosY
+          const threeY = rosZ
+          const threeZ = rosX
+
+          const rosQx = transform.rotation.x
+          const rosQy = transform.rotation.y
+          const rosQz = transform.rotation.z
+          const rosQw = transform.rotation.w
+
+          const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
+          const coordRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+          const threeQuat = new THREE.Quaternion()
+          threeQuat.multiplyQuaternions(coordRot, rosQuat)
+
+          const localTransform = new THREE.Matrix4()
+          localTransform.compose(
+            new THREE.Vector3(threeX, threeY, threeZ),
+            threeQuat,
+            new THREE.Vector3(1, 1, 1)
+          )
+
+          result = result.multiply(localTransform)
+        }
+        return result
       }
 
-      // 沿着路径累积变换
-      let result = new THREE.Matrix4().identity()
-      for (let i = path.length - 1; i > 0; i--) {
-        const parent = path[i]
-        const child = path[i - 1]
-        if (!parent || !child) continue
-        const parentTransforms = transforms.get(parent)
-        if (!parentTransforms) continue
-        const transform = parentTransforms.get(child)
-        if (!transform || !transform.translation || !transform.rotation) continue
+      // 尝试从 frameName 向下查找路径到 fixedFrame（frameName 是 fixedFrame 的祖先）
+      const pathUp: string[] = []
+      const foundUp = findPath(frameName, fixedFrame, new Set(), pathUp)
 
-        const rosX = transform.translation.x
-        const rosY = transform.translation.y
-        const rosZ = transform.translation.z
-        const threeX = -rosY
-        const threeY = rosZ
-        const threeZ = rosX
+      if (foundUp) {
+        // 沿着路径累积变换（从 frameName 到 fixedFrame），然后取逆
+        let transformToFixed = new THREE.Matrix4().identity()
+        for (let i = pathUp.length - 1; i > 0; i--) {
+          const parent = pathUp[i]
+          const child = pathUp[i - 1]
+          if (!parent || !child) continue
+          const parentTransforms = transforms.get(parent)
+          if (!parentTransforms) continue
+          const transform = parentTransforms.get(child)
+          if (!transform || !transform.translation || !transform.rotation) continue
 
-        const rosQx = transform.rotation.x
-        const rosQy = transform.rotation.y
-        const rosQz = transform.rotation.z
-        const rosQw = transform.rotation.w
+          const rosX = transform.translation.x
+          const rosY = transform.translation.y
+          const rosZ = transform.translation.z
+          const threeX = -rosY
+          const threeY = rosZ
+          const threeZ = rosX
 
-        const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
-        const coordRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
-        const threeQuat = new THREE.Quaternion()
-        threeQuat.multiplyQuaternions(coordRot, rosQuat)
+          const rosQx = transform.rotation.x
+          const rosQy = transform.rotation.y
+          const rosQz = transform.rotation.z
+          const rosQw = transform.rotation.w
 
-        const localTransform = new THREE.Matrix4()
-        localTransform.compose(
-          new THREE.Vector3(threeX, threeY, threeZ),
-          threeQuat,
-          new THREE.Vector3(1, 1, 1)
-        )
+          const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
+          const coordRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+          const threeQuat = new THREE.Quaternion()
+          threeQuat.multiplyQuaternions(coordRot, rosQuat)
 
-        result = result.multiply(localTransform)
+          const localTransform = new THREE.Matrix4()
+          localTransform.compose(
+            new THREE.Vector3(threeX, threeY, threeZ),
+            threeQuat,
+            new THREE.Vector3(1, 1, 1)
+          )
+
+          transformToFixed = transformToFixed.multiply(localTransform)
+        }
+        // 取逆得到从 fixedFrame 到 frameName 的变换
+        return transformToFixed.clone().invert()
       }
 
-      return result
+      return null
     }
 
     // 递归渲染 TF 树
