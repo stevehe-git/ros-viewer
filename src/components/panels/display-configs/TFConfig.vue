@@ -136,15 +136,86 @@
             :key="frame.name"
             class="frame-item"
           >
-            <el-icon class="frame-expand-icon">
-              <ArrowRight />
-            </el-icon>
-            <span class="frame-name">{{ frame.name }}</span>
-            <el-checkbox
-              :model-value="frame.enabled"
-              @update:model-value="handleFrameEnabledChange(frame.name, $event)"
-              class="frame-checkbox"
-            />
+            <div class="frame-header" @click="toggleFrameExpanded(frame.name)">
+              <el-icon class="frame-expand-icon" :class="{ expanded: expandedFrames.has(frame.name) }">
+                <ArrowRight />
+              </el-icon>
+              <span class="frame-name">{{ frame.name }}</span>
+              <el-checkbox
+                :model-value="frame.enabled"
+                @update:model-value="handleFrameEnabledChange(frame.name, $event)"
+                @click.stop
+                class="frame-checkbox"
+              />
+            </div>
+            <!-- Frame Details (展开时显示) -->
+            <div v-show="expandedFrames.has(frame.name)" class="frame-details">
+              <!-- Parent -->
+              <div class="frame-detail-row">
+                <span class="frame-detail-label">Parent:</span>
+                <span class="frame-detail-value">{{ frameInfo(frame.name).parent || 'None' }}</span>
+              </div>
+              
+              <!-- Position -->
+              <div class="frame-detail-section">
+                <div class="frame-detail-header" @click="toggleDetailSection('position', frame.name)">
+                  <el-icon class="detail-expand-icon" :class="{ expanded: expandedDetails.has(`position-${frame.name}`) }">
+                    <ArrowRight />
+                  </el-icon>
+                  <span class="frame-detail-label">Position:</span>
+                </div>
+                <div v-show="expandedDetails.has(`position-${frame.name}`)" class="frame-detail-content">
+                  <span class="frame-detail-value">
+                    {{ formatPosition(frameInfo(frame.name).position) }}
+                  </span>
+                </div>
+              </div>
+              
+              <!-- Orientation -->
+              <div class="frame-detail-section">
+                <div class="frame-detail-header" @click="toggleDetailSection('orientation', frame.name)">
+                  <el-icon class="detail-expand-icon" :class="{ expanded: expandedDetails.has(`orientation-${frame.name}`) }">
+                    <ArrowRight />
+                  </el-icon>
+                  <span class="frame-detail-label">Orientation:</span>
+                </div>
+                <div v-show="expandedDetails.has(`orientation-${frame.name}`)" class="frame-detail-content">
+                  <span class="frame-detail-value">
+                    {{ formatOrientation(frameInfo(frame.name).orientation) }}
+                  </span>
+                </div>
+              </div>
+              
+              <!-- Relative Position -->
+              <div class="frame-detail-section">
+                <div class="frame-detail-header" @click="toggleDetailSection('relativePosition', frame.name)">
+                  <el-icon class="detail-expand-icon" :class="{ expanded: expandedDetails.has(`relativePosition-${frame.name}`) }">
+                    <ArrowRight />
+                  </el-icon>
+                  <span class="frame-detail-label">Relative Position:</span>
+                </div>
+                <div v-show="expandedDetails.has(`relativePosition-${frame.name}`)" class="frame-detail-content">
+                  <span class="frame-detail-value">
+                    {{ formatPosition(frameInfo(frame.name).relativePosition) }}
+                  </span>
+                </div>
+              </div>
+              
+              <!-- Relative Orientation -->
+              <div class="frame-detail-section">
+                <div class="frame-detail-header" @click="toggleDetailSection('relativeOrientation', frame.name)">
+                  <el-icon class="detail-expand-icon" :class="{ expanded: expandedDetails.has(`relativeOrientation-${frame.name}`) }">
+                    <ArrowRight />
+                  </el-icon>
+                  <span class="frame-detail-label">Relative Orientation:</span>
+                </div>
+                <div v-show="expandedDetails.has(`relativeOrientation-${frame.name}`)" class="frame-detail-content">
+                  <span class="frame-detail-value">
+                    {{ formatOrientation(frameInfo(frame.name).relativeOrientation) }}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -168,6 +239,8 @@ const props = defineProps<Props>()
 const rvizStore = useRvizStore()
 
 const framesExpanded = ref(false)
+const expandedFrames = ref<Set<string>>(new Set())
+const expandedDetails = ref<Set<string>>(new Set())
 
 // 从options中获取frames列表，如果没有则从tfManager获取
 const frames = computed(() => {
@@ -206,6 +279,62 @@ const handleFrameEnabledChange = (frameName: string, enabled: boolean) => {
     frame.name === frameName ? { ...frame, enabled } : frame
   )
   update('frames', updatedFrames)
+}
+
+const toggleFrameExpanded = (frameName: string) => {
+  if (expandedFrames.value.has(frameName)) {
+    expandedFrames.value.delete(frameName)
+  } else {
+    expandedFrames.value.add(frameName)
+  }
+}
+
+const toggleDetailSection = (section: string, frameName: string) => {
+  const key = `${section}-${frameName}`
+  if (expandedDetails.value.has(key)) {
+    expandedDetails.value.delete(key)
+  } else {
+    expandedDetails.value.add(key)
+  }
+}
+
+// 获取数据更新触发器（用于响应式追踪）
+const dataUpdateTrigger = tfManager.getDataUpdateTrigger()
+
+// 所有 frames 的详细信息（响应式）
+const allFramesInfo = computed(() => {
+  // 访问触发器以确保响应式追踪
+  dataUpdateTrigger.value
+  const fixedFrame = rvizStore.globalOptions.fixedFrame || 'map'
+  
+  const infoMap = new Map<string, ReturnType<typeof tfManager.getFrameInfo>>()
+  frames.value.forEach(frame => {
+    infoMap.set(frame.name, tfManager.getFrameInfo(frame.name, fixedFrame))
+  })
+  return infoMap
+})
+
+// 获取 frame 的详细信息（响应式）
+const frameInfo = (frameName: string) => {
+  return allFramesInfo.value.get(frameName) || {
+    parent: null,
+    position: null,
+    orientation: null,
+    relativePosition: null,
+    relativeOrientation: null
+  }
+}
+
+// 格式化位置显示
+const formatPosition = (pos: { x: number; y: number; z: number } | null): string => {
+  if (!pos) return 'N/A'
+  return `${pos.x.toFixed(5)}; ${pos.y.toFixed(5)}; ${pos.z.toFixed(5)}`
+}
+
+// 格式化方向显示
+const formatOrientation = (orient: { x: number; y: number; z: number; w: number } | null): string => {
+  if (!orient) return 'N/A'
+  return `${orient.x.toFixed(5)}; ${orient.y.toFixed(5)}; ${orient.z.toFixed(5)}; ${orient.w.toFixed(5)}`
 }
 
 const update = (key: string, value: any) => {
@@ -291,18 +420,31 @@ watch(() => props.options.frameTimeout, (timeout) => {
 }
 
 .frame-item {
+  font-size: 12px;
+  color: #606266;
+}
+
+.frame-header {
   display: flex;
   align-items: center;
   padding: 4px 8px 4px 16px;
-  font-size: 12px;
-  color: #606266;
   gap: 6px;
+  cursor: pointer;
+}
+
+.frame-header:hover {
+  background: #f0f2f5;
 }
 
 .frame-expand-icon {
   font-size: 12px;
   color: #909399;
   flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.frame-expand-icon.expanded {
+  transform: rotate(90deg);
 }
 
 .frame-name {
@@ -314,5 +456,63 @@ watch(() => props.options.frameTimeout, (timeout) => {
 
 .frame-checkbox {
   flex-shrink: 0;
+}
+
+.frame-details {
+  padding-left: 32px;
+  background: #fafafa;
+  border-top: 1px solid #ebeef5;
+}
+
+.frame-detail-row {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px 4px 8px;
+  font-size: 11px;
+  gap: 8px;
+}
+
+.frame-detail-section {
+  border-top: 1px solid #ebeef5;
+}
+
+.frame-detail-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px 4px 8px;
+  font-size: 11px;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.frame-detail-header:hover {
+  background: #f0f2f5;
+}
+
+.detail-expand-icon {
+  font-size: 10px;
+  color: #909399;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.detail-expand-icon.expanded {
+  transform: rotate(90deg);
+}
+
+.frame-detail-label {
+  color: #909399;
+  min-width: 120px;
+}
+
+.frame-detail-value {
+  color: #606266;
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.frame-detail-content {
+  padding: 4px 8px 4px 24px;
+  font-size: 11px;
 }
 </style>

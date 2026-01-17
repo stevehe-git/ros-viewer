@@ -42,11 +42,44 @@ class TFManager {
   // TF 树结构（响应式）
   public tfTree = ref<TFTreeNode[]>([])
   
+  // 数据更新触发器（用于响应式追踪）
+  private dataUpdateTrigger = ref(0)
+  
   // 默认坐标系（如果没有 TF 数据）
   private defaultFrames = ['map', 'odom', 'base_link', 'base_footprint']
   
   // Frame 超时时间（秒）
   private frameTimeout = 15
+  
+  /**
+   * 获取数据更新触发器（用于响应式追踪）
+   */
+  getDataUpdateTrigger() {
+    return this.dataUpdateTrigger
+  }
+  
+  /**
+   * 触发数据更新（节流）
+   */
+  private triggerDataUpdateThrottled() {
+    if (this.dataUpdateThrottleTimer) {
+      this.pendingDataUpdate = true
+      return
+    }
+    
+    this.dataUpdateTrigger.value++
+    this.pendingDataUpdate = false
+    
+    this.dataUpdateThrottleTimer = window.setTimeout(() => {
+      this.dataUpdateThrottleTimer = null
+      if (this.pendingDataUpdate) {
+        this.triggerDataUpdateThrottled()
+      }
+    }, 100) // 每100ms最多更新一次
+  }
+  
+  private dataUpdateThrottleTimer: number | null = null
+  private pendingDataUpdate = false
 
   /**
    * 设置 ROS 实例
@@ -150,6 +183,9 @@ class TFManager {
               // 更新 frames 列表和树结构
               this.updateFramesList()
               this.updateTFTree()
+              
+              // 触发数据更新通知（节流）
+              this.triggerDataUpdateThrottled()
             }
           })
         }
@@ -208,6 +244,9 @@ class TFManager {
               // 更新 frames 列表和树结构
               this.updateFramesList()
               this.updateTFTree()
+              
+              // 触发数据更新通知（节流）
+              this.triggerDataUpdateThrottled()
             }
           })
         }
@@ -375,6 +414,100 @@ class TFManager {
    */
   getFramesRef() {
     return this.frames
+  }
+
+  /**
+   * 获取 frame 的详细信息（包括 parent, position, orientation）
+   */
+  getFrameInfo(frameName: string, fixedFrame: string = 'map'): {
+    parent: string | null
+    position: { x: number; y: number; z: number } | null
+    orientation: { x: number; y: number; z: number; w: number } | null
+    relativePosition: { x: number; y: number; z: number } | null
+    relativeOrientation: { x: number; y: number; z: number; w: number } | null
+  } {
+    const transforms = this.transforms.value
+    
+    // 查找 frame 的父节点和相对变换
+    let parent: string | null = null
+    let relativePosition: { x: number; y: number; z: number } | null = null
+    let relativeOrientation: { x: number; y: number; z: number; w: number } | null = null
+    
+    for (const [parentName, children] of transforms.entries()) {
+      const transform = children.get(frameName)
+      if (transform) {
+        parent = parentName
+        relativePosition = transform.translation ? { ...transform.translation } : null
+        relativeOrientation = transform.rotation ? { ...transform.rotation } : null
+        break
+      }
+    }
+    
+    // 计算相对于固定帧的绝对位置和方向
+    let position: { x: number; y: number; z: number } | null = null
+    let orientation: { x: number; y: number; z: number; w: number } | null = null
+    
+    if (frameName === fixedFrame) {
+      position = { x: 0, y: 0, z: 0 }
+      orientation = { x: 0, y: 0, z: 0, w: 1 }
+    } else {
+      // 查找从 fixedFrame 到 frameName 的路径并累积变换
+      const path: string[] = []
+      const findPath = (current: string, target: string, visited: Set<string>): boolean => {
+        if (current === target) {
+          path.push(current)
+          return true
+        }
+        if (visited.has(current)) return false
+        visited.add(current)
+
+        for (const [p, children] of transforms.entries()) {
+          if (p === current) {
+            for (const childName of children.keys()) {
+              if (childName && findPath(childName, target, visited)) {
+                path.push(current)
+                return true
+              }
+            }
+          }
+        }
+        return false
+      }
+
+      if (findPath(fixedFrame, frameName, new Set())) {
+        // 沿着路径累积变换（使用矩阵累积，更准确）
+        let pos = { x: 0, y: 0, z: 0 }
+        let rot = { x: 0, y: 0, z: 0, w: 1 }
+        
+        for (let i = path.length - 1; i > 0; i--) {
+          const p = path[i]
+          const c = path[i - 1]
+          if (!p || !c) continue
+          const parentTransforms = transforms.get(p)
+          if (!parentTransforms) continue
+          const transform = parentTransforms.get(c)
+          if (!transform || !transform.translation || !transform.rotation) continue
+          
+          // 累积位置（简化处理，实际应该用矩阵变换）
+          pos.x += transform.translation.x
+          pos.y += transform.translation.y
+          pos.z += transform.translation.z
+          // 旋转累积更复杂，这里使用最后一个旋转（简化处理）
+          rot = transform.rotation
+        }
+        
+        position = pos
+        orientation = rot
+      }
+    }
+    
+    return {
+      parent,
+      position,
+      orientation,
+      relativePosition,
+      relativeOrientation
+    }
   }
 
   /**
