@@ -748,8 +748,62 @@ export function use3DRenderer(scene: THREE.Scene) {
       const isEnabled = enabledFrames.has(node.name)
       let worldTransform: THREE.Matrix4 | null = null
       
+      // 计算节点的世界变换（无论是否启用，都需要存储位置用于绘制箭头）
+      worldTransform = getFrameTransformToFixed(node.name)
+      
+      // 如果无法找到到固定帧的路径，尝试使用父节点变换（向后兼容）
+      if (!worldTransform) {
+        let localTransform = new THREE.Matrix4().identity()
+        
+        if (node.parent && transforms.has(node.parent)) {
+          const parentTransforms = transforms.get(node.parent)!
+          const transform = parentTransforms.get(node.name)
+          
+          if (transform && transform.translation && transform.rotation) {
+            const rosX = transform.translation.x
+            const rosY = transform.translation.y
+            const rosZ = transform.translation.z
+            const threeX = -rosY
+            const threeY = rosZ
+            const threeZ = rosX
+            
+            const rosQx = transform.rotation.x
+            const rosQy = transform.rotation.y
+            const rosQz = transform.rotation.z
+            const rosQw = transform.rotation.w
+            
+            const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
+            const coordRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+            const threeQuat = new THREE.Quaternion()
+            threeQuat.multiplyQuaternions(coordRot, rosQuat)
+            
+            localTransform.compose(
+              new THREE.Vector3(threeX, threeY, threeZ),
+              threeQuat,
+              new THREE.Vector3(1, 1, 1)
+            )
+          }
+        }
+
+        worldTransform = localTransform.clone()
+        if (parentWorldTransform) {
+          worldTransform = parentWorldTransform.clone().multiply(localTransform)
+        }
+      }
+      
+      // 如果计算出了变换，存储位置（无论节点是否启用，都需要用于绘制箭头）
+      if (worldTransform) {
+        const position = new THREE.Vector3()
+        const quaternion = new THREE.Quaternion()
+        const scale = new THREE.Vector3(1, 1, 1)
+        worldTransform.decompose(position, quaternion, scale)
+        
+        // 存储位置（用于绘制连接线）
+        framePositions.set(node.name, position.clone())
+      }
+      
       // 如果当前节点被启用，渲染它
-      if (isEnabled) {
+      if (isEnabled && worldTransform) {
         // 计算相对于固定帧的变换（而不是相对于父节点）
         // 这样即使父节点未启用，也能正确显示子节点
         worldTransform = getFrameTransformToFixed(node.name)
@@ -907,43 +961,70 @@ export function use3DRenderer(scene: THREE.Scene) {
       renderTFFrame(rootNode)
     })
 
-    // 绘制连接线（从父到子）
-    if (showArrows) {
-      tfTree.forEach(rootNode => {
-        const drawConnections = (node: any) => {
-          if (!enabledFrames.has(node.name)) return
-          
-          const parentPos = framePositions.get(node.name)
-          if (!parentPos) return
-
-          if (node.children && node.children.length > 0) {
-            node.children.forEach((child: any) => {
-              if (!enabledFrames.has(child.name)) return
-              
-              const childPos = framePositions.get(child.name)
-              if (!childPos) return
-
-              // 绘制从父到子的连接线
-              const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-                parentPos,
-                childPos
-              ])
-              const lineMaterial = new THREE.LineBasicMaterial({
-                color: 0xffff00, // 黄色连接线
-                transparent: true,
-                opacity: markerAlpha * 0.5,
-                linewidth: 2
-              })
-              const connectionLine = new THREE.Line(lineGeometry, lineMaterial)
-              connectionLine.userData.componentId = componentId
-              tfGroup.add(connectionLine)
-
-              // 递归绘制子节点的连接
-              drawConnections(child)
-            })
-          }
+    // 绘制连接线（从父到子，只要 showArrows 为 true 且至少有一个 frame 被启用就显示）
+    if (showArrows && enabledFrames.size > 0) {
+      // 收集所有节点（包括未启用的）
+      const allNodes = new Map<string, any>()
+      const collectNodes = (node: any) => {
+        allNodes.set(node.name, node)
+        if (node.children && node.children.length > 0) {
+          node.children.forEach((child: any) => {
+            collectNodes(child)
+          })
         }
-        drawConnections(rootNode)
+      }
+      tfTree.forEach(rootNode => {
+        collectNodes(rootNode)
+      })
+
+      // 为每个节点绘制到其子节点的连接线（只要位置存在就绘制）
+      allNodes.forEach((node: any) => {
+        const parentPos = framePositions.get(node.name)
+        if (!parentPos) return
+
+        if (node.children && node.children.length > 0) {
+          node.children.forEach((child: any) => {
+            const childPos = framePositions.get(child.name)
+            if (!childPos) return
+
+            // 绘制从父到子的连接线（带箭头）
+            const direction = new THREE.Vector3().subVectors(childPos, parentPos)
+            const distance = direction.length()
+            
+            if (distance > 0.001) { // 避免距离太小的箭头
+              direction.normalize()
+              
+              // 箭头参数
+              const arrowHeadLength = 0.05 * markerScale
+              const arrowHeadWidth = 0.03 * markerScale
+              
+              // 创建箭头（从父指向子）
+              const arrow = new THREE.ArrowHelper(
+                direction, // 方向（从父指向子）
+                parentPos, // 起点（父节点位置）
+                distance, // 箭头总长度（到子节点的距离）
+                0xffff00, // 黄色
+                arrowHeadLength, // 箭头头部长度
+                arrowHeadWidth // 箭头头部宽度
+              )
+              
+              // 设置箭头透明度
+              const arrowLineMaterial = arrow.line.material as THREE.Material
+              if (arrowLineMaterial) {
+                arrowLineMaterial.transparent = true
+                arrowLineMaterial.opacity = markerAlpha * 0.5
+              }
+              const arrowConeMaterial = arrow.cone.material as THREE.Material
+              if (arrowConeMaterial) {
+                arrowConeMaterial.transparent = true
+                arrowConeMaterial.opacity = markerAlpha * 0.5
+              }
+              
+              arrow.userData.componentId = componentId
+              tfGroup.add(arrow)
+            }
+          })
+        }
       })
     }
 
