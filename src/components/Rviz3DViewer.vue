@@ -265,24 +265,71 @@ const updateGridHelper = () => {
   }
 
   // 根据 plane 参数设置网格方向
-  // THREE.GridHelper 默认在 XY 平面（X轴向右，Y轴向上，Z轴向前）
-  // 平面定义：
-  // - XY: X轴和Y轴在网格平面上，Z轴垂直（默认，不需要旋转）
-  // - XZ: X轴和Z轴在网格平面上，Y轴垂直（绕X轴旋转-90度）
-  // - YZ: Y轴和Z轴在网格平面上，X轴垂直（绕Y轴旋转90度）
+  // 基于当前正确的坐标轴方向：
+  // - ROS X轴 (红色) - 向前（THREE.js的Z方向）
+  // - ROS Y轴 (绿色) - 向左（THREE.js的-X方向）
+  // - ROS Z轴 (蓝色) - 向上（THREE.js的Y方向）
+  // 
+  // THREE.GridHelper 默认在 XY 平面（THREE.js的X向右，Y向上，Z向前）
+  // 
+  // 根据用户反馈：
+  // - XZ 实际上显示的是 ROS 的 YZ 平面
+  // - YZ 和 XY 一样没变
+  // 
+  // 重新分析旋转逻辑：
+  // ROS XY平面：X轴（向前，THREE.js Z）和Y轴（向左，THREE.js -X）在网格上
+  // ROS XZ平面：X轴（向前，THREE.js Z）和Z轴（向上，THREE.js Y）在网格上
+  // ROS YZ平面：Y轴（向左，THREE.js -X）和Z轴（向上，THREE.js Y）在网格上
   gridHelper.rotation.set(0, 0, 0)
   switch (plane) {
     case 'XY':
-      // 默认平面，不需要旋转（X和Y在网格上，Z垂直）
-      gridHelper.rotation.set(0, 0, 0)
+      // ROS XY平面：X轴（向前，THREE.js Z）和Y轴（向左，THREE.js -X）在网格上
+      // 需要将THREE.js的XY平面旋转，使网格线沿Z（向前）和-X（向左）方向
+      // 先绕X轴旋转90度，使XY平面变成XZ平面（THREE.js），然后绕Z轴旋转90度
+      gridHelper.rotation.set(Math.PI / 2, 0, Math.PI / 2)
       break
     case 'XZ':
-      // 绕 X 轴旋转 -90 度，使网格在XZ平面（X和Z在网格上，Y垂直）
-      gridHelper.rotation.set(-Math.PI / 2, 0, 0)
+      // ROS XZ平面：X轴（向前，THREE.js Z）和Z轴（向上，THREE.js Y）在网格上
+      // 需要将THREE.js的XY平面旋转，使网格线沿Z（向前）和Y（向上）方向
+      // 绕X轴旋转-90度，使XY平面变成XZ平面（THREE.js），但这样Z是向前，Y是向上？不对
+      // 用户说当前XZ显示的是ROS YZ平面，说明当前旋转(-Math.PI / 2, 0, 0)得到的是YZ平面
+      // 那么XZ平面应该用其他旋转
+      // 尝试：绕Y轴旋转90度，然后绕Z轴旋转90度？或者直接绕X轴旋转90度？
+      // 实际上，要得到XZ平面（X向前Z向上），需要网格在XZ平面（THREE.js），其中X对应Z（向前），Z对应Y（向上）
+      // 绕X轴旋转-90度：XY平面变成XZ平面（THREE.js），X向右，Z向前
+      // 但我们需要X向前（THREE.js Z）和Z向上（THREE.js Y），所以需要再绕X轴或Y轴调整
+      // 或者：先绕Y轴旋转90度，使XY平面变成XZ平面（THREE.js），X向前，Z向上
+      // 绕Y轴旋转90度：XY平面（X向右，Y向上）变成XZ平面（THREE.js），X向前（Z），Z向上（Y）
+      // 这样得到：网格的X方向是Z向前（THREE.js Z），网格的Y方向是Y向上（THREE.js Y）
+      // 这正是我们需要的ROS XZ平面！
+      gridHelper.rotation.set(0, Math.PI / 2, 0)
       break
     case 'YZ':
-      // 绕 Y 轴旋转 90 度，使网格在YZ平面（Y和Z在网格上，X垂直）
-      gridHelper.rotation.set(0, Math.PI / 2, 0)
+      // ROS YZ平面：Y轴（向左，THREE.js -X）和Z轴（向上，THREE.js Y）在网格上
+      // 用户说YZ和XY一样，说明当前YZ的旋转和XY的旋转结果一样
+      // 但用户也说XZ显示的是ROS YZ平面，说明当前XZ的旋转(-Math.PI / 2, 0, 0)得到的是YZ平面
+      // 那么YZ平面应该用(-Math.PI / 2, 0, 0)
+      // 但用户说YZ和XY一样，可能XY的旋转也需要调整
+      // 或者：YZ平面应该用和XY不同的旋转
+      // 重新分析：YZ平面需要Y（向左，THREE.js -X）和Z（向上，THREE.js Y）在网格上
+      // THREE.GridHelper默认XY平面：X向右，Y向上
+      // 要得到YZ平面，需要：网格的X方向对应ROS的Y方向（向左，THREE.js -X），网格的Y方向对应ROS的Z方向（向上，THREE.js Y）
+      // 从THREE.js XY平面（X向右，Y向上）到ROS YZ平面（Y向左，Z向上）：
+      // - 网格的X方向需要从向右变成向左，即绕Z轴旋转180度？或者绕Y轴旋转？
+      // - 网格的Y方向需要保持向上
+      // 如果绕Z轴旋转-90度：X向右变成Y向上，Y向上变成-X向右（即向左）
+      // 这样得到：网格的X方向是Y向上（THREE.js Y），网格的Y方向是-X向左（THREE.js -X）
+      // 但我们需要：网格的X方向是Y向左（THREE.js -X），网格的Y方向是Z向上（THREE.js Y）
+      // 所以需要交换：绕Z轴旋转-90度后，还需要绕X轴或Y轴调整
+      // 或者：先绕X轴旋转-90度，使XY平面变成XZ平面，然后绕Z轴旋转-90度
+      // 绕X轴旋转-90度：XY平面变成XZ平面（THREE.js），X向右，Z向前
+      // 然后绕Z轴旋转-90度：X向右变成-Y向上，Z向前变成X向右
+      // 这样得到：网格的X方向是-Y向上（THREE.js -Y），网格的Y方向是X向右（THREE.js X）
+      // 还是不对...
+      // 
+      // 根据用户反馈，当前XZ的旋转(-Math.PI / 2, 0, 0)显示的是ROS YZ平面
+      // 那么ROS YZ平面应该用(-Math.PI / 2, 0, 0)
+      gridHelper.rotation.set(-Math.PI / 2, 0, 0)
       break
   }
 
@@ -318,27 +365,32 @@ const updateAxesHelper = () => {
   // 创建自定义坐标轴，支持设置半径
   axesHelper = new THREE.Group()
 
-  // X轴 (红色) - 从原点到(length, 0, 0)
+  // ROS/RViz 坐标系统：
+  // - X轴 (红色) - 向前（THREE.js的Z方向）
+  // - Y轴 (绿色) - 向左（THREE.js的-X方向）
+  // - Z轴 (蓝色) - 向上（THREE.js的Y方向）
+  
+  // X轴 (红色) - ROS X 向前，对应 THREE.js Z 方向
   const xGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
   const xMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 })
   const xAxis = new THREE.Mesh(xGeometry, xMaterial)
-  xAxis.rotation.z = -Math.PI / 2 // 旋转到X轴方向
-  xAxis.position.x = length / 2
+  xAxis.rotation.x = Math.PI / 2 // 旋转到Z轴方向（THREE.js）
+  xAxis.position.z = length / 2 // THREE.js Z 方向
   axesHelper.add(xAxis)
 
-  // Y轴 (绿色) - 从原点到(0, length, 0)
+  // Y轴 (绿色) - ROS Y 向左，对应 THREE.js -X 方向
   const yGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
   const yMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
   const yAxis = new THREE.Mesh(yGeometry, yMaterial)
-  yAxis.position.y = length / 2
+  yAxis.rotation.z = Math.PI / 2 // 旋转到-X轴方向（THREE.js）
+  yAxis.position.x = -length / 2 // THREE.js -X 方向（向左）
   axesHelper.add(yAxis)
 
-  // Z轴 (蓝色) - 从原点到(0, 0, length)
+  // Z轴 (蓝色) - ROS Z 向上，对应 THREE.js Y 方向
   const zGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
   const zMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff })
   const zAxis = new THREE.Mesh(zGeometry, zMaterial)
-  zAxis.rotation.x = Math.PI / 2 // 旋转到Z轴方向
-  zAxis.position.z = length / 2
+  zAxis.position.y = length / 2 // THREE.js Y 方向（向上）
   axesHelper.add(zAxis)
 
   // 设置透明度

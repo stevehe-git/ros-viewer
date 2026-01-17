@@ -54,8 +54,11 @@ export function use3DRenderer(scene: THREE.Scene) {
         side: THREE.DoubleSide
       })
       renderObjects.value.mapMesh = new THREE.Mesh(mapGeometry, mapMaterial)
-      renderObjects.value.mapMesh.rotation.x = -Math.PI / 2
-      renderObjects.value.mapMesh.position.y = 0
+      // ROS 地图通常在 XY 平面（俯视图），需要转换到 THREE.js 坐标系
+      // ROS XY 平面：X向前（THREE.js Z），Y向左（THREE.js -X），Z向上（THREE.js Y）
+      // 需要将 THREE.js 的 XY 平面旋转，使网格在 XZ 平面（THREE.js），然后绕 Z 轴旋转 90 度
+      renderObjects.value.mapMesh.rotation.set(Math.PI / 2, 0, Math.PI / 2)
+      renderObjects.value.mapMesh.position.set(0, 0, 0)
       renderObjects.value.mapMesh.receiveShadow = true
       scene.add(renderObjects.value.mapMesh)
     }
@@ -70,13 +73,22 @@ export function use3DRenderer(scene: THREE.Scene) {
   const updatePathRender = (componentId: string, message: any) => {
     if (!message || !message.poses || message.poses.length === 0) return
 
-    // 提取路径点
+    // 提取路径点（ROS 坐标系）
+    // 转换 ROS 坐标到 THREE.js 坐标
+    // - ROS X (向前) → THREE.js Z (向前)
+    // - ROS Y (向左) → THREE.js -X (向左)
+    // - ROS Z (向上) → THREE.js Y (向上)
     const points = message.poses.map((pose: any) => {
       const position = pose.pose?.position || pose.position || {}
+      const rosX = position.x || 0
+      const rosY = position.y || 0
+      const rosZ = position.z || 0.1
+      
+      // 转换到 THREE.js 坐标系
       return new THREE.Vector3(
-        position.x || 0,
-        position.y || 0,
-        position.z || 0.1
+        -rosY,  // ROS Y (向左) → THREE.js -X
+        rosZ,   // ROS Z (向上) → THREE.js Y
+        rosX    // ROS X (向前) → THREE.js Z
       )
     })
 
@@ -143,13 +155,28 @@ export function use3DRenderer(scene: THREE.Scene) {
       }
 
       const angle = angleMin + i * angleIncrement
-      // 注意：ROS 坐标系中，x 是前方，y 是左侧，z 是上方
-      // 在 RViz 中，通常将激光扫描显示在 XY 平面（俯视图）
-      const x = range * Math.cos(angle)
-      const y = range * Math.sin(angle)
-      const z = 0 // 2D 激光扫描在 XY 平面（俯视图）
+      // ROS 坐标系：x 是前方，y 是左侧，z 是上方
+      // 当前坐标轴映射：
+      // - ROS X (向前) → THREE.js Z (向前)
+      // - ROS Y (向左) → THREE.js -X (向左)
+      // - ROS Z (向上) → THREE.js Y (向上)
+      // 
+      // LaserScan 在 ROS XY 平面（俯视图），需要转换到 THREE.js 坐标系
+      // ROS XY 平面：X向前（THREE.js Z），Y向左（THREE.js -X），Z向上（THREE.js Y）
+      const rosX = range * Math.cos(angle)  // ROS X (向前)
+      const rosY = range * Math.sin(angle)  // ROS Y (向左)
+      const rosZ = 0 // ROS Z = 0 (在XY平面)
+      
+      // 转换到 THREE.js 坐标系
+      // ROS (x, y, z) → THREE.js (x, y, z)
+      // ROS X (向前) → THREE.js Z
+      // ROS Y (向左) → THREE.js -X
+      // ROS Z (向上) → THREE.js Y
+      const threeX = -rosY  // ROS Y (向左) → THREE.js -X
+      const threeY = rosZ   // ROS Z (向上) → THREE.js Y
+      const threeZ = rosX   // ROS X (向前) → THREE.js Z
 
-      points.push(new THREE.Vector3(x, y, z))
+      points.push(new THREE.Vector3(threeX, threeY, threeZ))
 
       // 获取对应的强度值
       const intensity = (intensities.length > i && intensities[i] !== undefined) ? intensities[i] : 0
@@ -399,17 +426,26 @@ export function use3DRenderer(scene: THREE.Scene) {
         break
       }
 
-      // 读取 x, y, z 坐标
-      const x = readFloat32(data, pointOffset + xOffset)
-      const y = readFloat32(data, pointOffset + yOffset)
-      const z = readFloat32(data, pointOffset + zOffset)
+      // 读取 ROS 坐标系中的 x, y, z 坐标
+      const rosX = readFloat32(data, pointOffset + xOffset)
+      const rosY = readFloat32(data, pointOffset + yOffset)
+      const rosZ = readFloat32(data, pointOffset + zOffset)
 
       // 过滤无效点（NaN 或 Infinity）
-      if (!isFinite(x) || !isFinite(y) || !isFinite(z)) {
+      if (!isFinite(rosX) || !isFinite(rosY) || !isFinite(rosZ)) {
         continue
       }
 
-      points.push(new THREE.Vector3(x, y, z))
+      // 转换 ROS 坐标到 THREE.js 坐标
+      // 当前坐标轴映射：
+      // - ROS X (向前) → THREE.js Z (向前)
+      // - ROS Y (向左) → THREE.js -X (向左)
+      // - ROS Z (向上) → THREE.js Y (向上)
+      const threeX = -rosY  // ROS Y (向左) → THREE.js -X
+      const threeY = rosZ   // ROS Z (向上) → THREE.js Y
+      const threeZ = rosX   // ROS X (向前) → THREE.js Z
+
+      points.push(new THREE.Vector3(threeX, threeY, threeZ))
 
       // 获取强度值（如果存在）
       if (intensityOffset !== -1 && pointOffset + intensityOffset + 4 <= data.length) {
