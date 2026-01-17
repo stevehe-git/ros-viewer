@@ -112,11 +112,17 @@ export function use3DRenderer(scene: THREE.Scene) {
    * 更新激光扫描渲染
    */
   const updateLaserScanRender = (componentId: string, message: any) => {
-    if (!message || !message.ranges || message.ranges.length === 0) return
+    if (!message || !message.ranges || message.ranges.length === 0) {
+      console.warn('LaserScan: Message is null or has no ranges', { componentId, hasMessage: !!message, rangesLength: message?.ranges?.length })
+      return
+    }
 
     // 获取组件配置
     const component = rvizStore.displayComponents.find(c => c.id === componentId)
-    if (!component) return
+    if (!component) {
+      console.warn('LaserScan: Component not found', componentId)
+      return
+    }
 
     const options = component.options || {}
     const style = options.style || 'Flat Squares'
@@ -189,7 +195,12 @@ export function use3DRenderer(scene: THREE.Scene) {
       }
     }
 
-    if (points.length === 0) return
+    if (points.length === 0) {
+      console.warn('LaserScan: No valid points after filtering', { componentId, rangesLength: ranges.length })
+      return
+    }
+    
+    console.log('LaserScan: Processing', { componentId, pointsCount: points.length, style, size, alpha })
 
     // 计算强度边界
     const finalMinIntensity = autocomputeIntensityBounds ? intensityMin : minIntensity
@@ -282,6 +293,7 @@ export function use3DRenderer(scene: THREE.Scene) {
       const pointsObject = new THREE.Points(geometry, material)
       pointsObject.userData.componentId = componentId
       laserscanGroup.add(pointsObject)
+      console.log('LaserScan: Added points to scene', { componentId, pointsCount: points.length, pointSize, useSizeAttenuation, visible: pointsObject.visible, position: pointsObject.position })
     } else if (style === 'Billboards') {
       // 使用 Sprite 渲染（类似广告牌效果）
       const sprites: THREE.Sprite[] = []
