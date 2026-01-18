@@ -8,6 +8,7 @@ import { ref, watch } from 'vue'
 import { useRvizStore } from '@/stores/rviz'
 import { DataConverter } from '@/services/dataConverter'
 import { tfManager } from '@/services/tfManager'
+import { TFRenderer } from '@/services/tfRenderer'
 
 export interface RendererObjects {
   mapMesh?: THREE.Mesh
@@ -28,6 +29,9 @@ export interface RendererObjects {
 export function use3DRenderer(scene: THREE.Scene) {
   const rvizStore = useRvizStore()
   const renderObjects = ref<RendererObjects>({})
+  
+  // TF 渲染器实例（单例，在场景中共享）
+  let tfRenderer: TFRenderer | null = null
 
   /**
    * 更新地图渲染
@@ -712,7 +716,94 @@ export function use3DRenderer(scene: THREE.Scene) {
   }
 
   /**
+   * 创建坐标系轴可视化
+   * ROS 标准：X(红)向前, Y(绿)向左, Z(蓝)向上
+   * 在 THREE.js 中：X(红)对应 ROS X → THREE.js Z, Y(绿)对应 ROS Y → THREE.js X, Z(蓝)对应 ROS Z → THREE.js Y
+   */
+  const createFrameAxes = (axisLength: number, markerAlpha: number): THREE.Group => {
+    const axesGroup = new THREE.Group()
+    
+    // X轴（红色）- ROS X 向前 → THREE.js Z 方向
+    const xGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0, 0, axisLength)
+    ])
+    const xMaterial = new THREE.LineBasicMaterial({ 
+      color: 0xff0000, 
+      transparent: true, 
+      opacity: markerAlpha 
+    })
+    const xAxis = new THREE.Line(xGeometry, xMaterial)
+    axesGroup.add(xAxis)
+
+    // Y轴（绿色）- ROS Y 向左 → THREE.js X 方向（取反后）
+    const yGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(axisLength, 0, 0)
+    ])
+    const yMaterial = new THREE.LineBasicMaterial({ 
+      color: 0x00ff00, 
+      transparent: true, 
+      opacity: markerAlpha 
+    })
+    const yAxis = new THREE.Line(yGeometry, yMaterial)
+    axesGroup.add(yAxis)
+
+    // Z轴（蓝色）- ROS Z 向上 → THREE.js Y 方向
+    const zGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0, axisLength, 0)
+    ])
+    const zMaterial = new THREE.LineBasicMaterial({ 
+      color: 0x0000ff, 
+      transparent: true, 
+      opacity: markerAlpha 
+    })
+    const zAxis = new THREE.Line(zGeometry, zMaterial)
+    axesGroup.add(zAxis)
+
+    return axesGroup
+  }
+
+  /**
+   * 创建坐标系名称标签
+   */
+  const createFrameLabel = (frameName: string, markerScale: number, markerAlpha: number): THREE.Sprite => {
+    const canvas = document.createElement('canvas')
+    const context = canvas.getContext('2d')!
+    canvas.width = 256
+    canvas.height = 64
+    
+    context.fillStyle = 'rgba(255, 255, 255, ' + markerAlpha + ')'
+    context.font = 'Bold 24px Arial'
+    context.fillText(frameName, 10, 40)
+    
+    const texture = new THREE.CanvasTexture(canvas)
+    const spriteMaterial = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      opacity: markerAlpha
+    })
+    const sprite = new THREE.Sprite(spriteMaterial)
+    sprite.scale.set(0.5 * markerScale, 0.125 * markerScale, 1)
+    sprite.position.set(0, 0.2 * markerScale, 0)
+    return sprite
+  }
+
+  /**
    * 更新 TF 渲染
+   * 
+   * 核心原理重构（基于用户提供的核心结论）：
+   * 1. ROS 和 THREE.js 使用不同的坐标系定义，必须做坐标映射转换
+   * 2. 坐标转换公式（唯一正确）：ROS(x, y, z) → THREE.js(x, z, -y)
+   * 3. 四元数直接赋值，分量一一对应，无需修改
+   * 4. 使用 THREE.Group 建立父子关系，严格还原 ROS TF 树的层级结构
+   * 5. 所有坐标都是本地坐标（相对父坐标系），Three.js 自动计算世界坐标
+   * 
+   * 设计原则：
+   * - 逻辑拆分：坐标转换、TF树构建、渲染分离
+   * - 层级还原：严格使用 Group 父子关系还原 ROS TF 树
+   * - 本地坐标：所有坐标都是相对父坐标系的本地坐标
    */
   function updateTFRender(componentId: string) {
     // 获取组件配置
@@ -743,442 +834,52 @@ export function use3DRenderer(scene: THREE.Scene) {
       })
     }
 
-    // 创建或获取 TF 组
-    let tfGroup = renderObjects.value.tfGroup
-    if (!tfGroup) {
-      tfGroup = new THREE.Group()
-      renderObjects.value.tfGroup = tfGroup
-      scene.add(tfGroup)
+    // 初始化或获取 TF 渲染器
+    if (!tfRenderer) {
+      tfRenderer = new TFRenderer(scene)
+      // 将 TF 渲染器的根组存储到 renderObjects 中
+      renderObjects.value.tfGroup = tfRenderer.rootGroup
     }
 
-    // 正确清理旧的 TF 对象：先 dispose 所有 WebGL 资源，再清除
-    // 这是根治内存泄漏的关键：tfGroup.clear() 不会自动 dispose WebGL 资源
-    const disposeObject = (obj: THREE.Object3D) => {
-      if (obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.Points) {
-        // 清理 geometry
-        if (obj.geometry) {
-          obj.geometry.dispose()
-        }
-        // 清理 material
-        if (obj.material) {
-          if (Array.isArray(obj.material)) {
-            obj.material.forEach((mat) => {
-              if (mat.map) mat.map.dispose()
-              mat.dispose()
-            })
-          } else {
-            if (obj.material.map) obj.material.map.dispose()
-            obj.material.dispose()
-          }
-        }
-      } else if (obj instanceof THREE.Sprite) {
-        // 清理 sprite 的 material 和 texture
-        if (obj.material) {
-          const spriteMat = obj.material as THREE.SpriteMaterial
-          if (spriteMat.map) {
-            spriteMat.map.dispose()
-          }
-          spriteMat.dispose()
-        }
-      } else if (obj instanceof THREE.Group) {
-        // 递归清理 Group 的子对象
-        const children = [...obj.children]
-        children.forEach(child => disposeObject(child))
-      }
-    }
-    
-    // 遍历并清理所有子对象
-    const childrenToDispose = [...tfGroup.children]
-    childrenToDispose.forEach(child => disposeObject(child))
-    
-    // 现在可以安全地清除（所有资源已释放）
-    tfGroup.clear()
+    // 设置固定帧
+    const fixedFrame = rvizStore.globalOptions.fixedFrame || 'map'
+    tfRenderer.setFixedFrame(fixedFrame)
 
-    // 从 tfManager 获取变换数据
+    // 从 tfManager 获取变换数据和树结构
     const transforms = tfManager.getTransforms()
     const tfTree = tfManager.getTFTree()
 
-    // 获取固定帧（用于计算变换）
-    const fixedFrame = rvizStore.globalOptions.fixedFrame || 'map'
+    // 使用 TFRenderer 构建 TF 层级结构
+    // 这会根据 TF 树创建 THREE.Group 的父子关系，并应用正确的坐标转换
+    // buildFrameHierarchy 内部会应用所有变换数据，使用正确的坐标转换公式
+    tfRenderer.buildFrameHierarchy(tfTree, transforms)
 
-    // 存储所有 frame 的位置（用于绘制连接线）
-    const framePositions = new Map<string, THREE.Vector3>()
-
-    // 计算 frame 相对于固定帧的变换
-    const getFrameTransformToFixed = (frameName: string): THREE.Matrix4 | null => {
-      if (frameName === fixedFrame) {
-        return new THREE.Matrix4().identity()
-      }
-
-      // 查找路径的辅助函数（从 current 向下查找 target）
-      const findPath = (current: string, target: string, visited: Set<string>, path: string[]): boolean => {
-        if (current === target) {
-          path.push(current)
-          return true
-        }
-        if (visited.has(current)) return false
-        visited.add(current)
-
-        // 查找 current 的所有子节点
-        for (const [parent, children] of transforms.entries()) {
-          if (parent === current) {
-            for (const [childName, transform] of children.entries()) {
-              if (findPath(childName, target, visited, path)) {
-                path.push(current)
-                return true
-              }
-            }
-          }
-        }
-        return false
-      }
-
-      // 尝试从 fixedFrame 向下查找路径到 frameName（frameName 是 fixedFrame 的子节点）
-      const pathDown: string[] = []
-      const foundDown = findPath(fixedFrame, frameName, new Set(), pathDown)
-
-      if (foundDown) {
-        // 沿着路径累积变换（从 fixedFrame 到 frameName）
-        let result = new THREE.Matrix4().identity()
-        for (let i = pathDown.length - 1; i > 0; i--) {
-          const parent = pathDown[i]
-          const child = pathDown[i - 1]
-          if (!parent || !child) continue
-          const parentTransforms = transforms.get(parent)
-          if (!parentTransforms) continue
-          const transform = parentTransforms.get(child)
-          if (!transform || !transform.translation || !transform.rotation) continue
-
-          const rosX = transform.translation.x
-          const rosY = transform.translation.y
-          const rosZ = transform.translation.z
-          // ROS 右手坐标系 → THREE.js 坐标系转换
-          // ROS: X向前, Y向左, Z向上
-          // THREE.js: X向右, Y向上, Z向前
-          // 位置转换：ROS (X,Y,Z) → THREE.js (Z,-X,Y)
-          // 经过旋转矩阵（绕Y轴-90度，然后绕Z轴180度）后：
-          // ROS X(向前) → THREE.js Z(向前)
-          // ROS Y(向左) → THREE.js X(向右，因为旋转矩阵会翻转)
-          // ROS Z(向上) → THREE.js Y(向上)
-          const threeX = -rosY   // ROS Y (向左) → THREE.js -X，经过旋转矩阵后变为 +X
-          const threeY = rosZ    // ROS Z (向上) → THREE.js Y
-          const threeZ = rosX    // ROS X (向前) → THREE.js Z
-
-          const rosQx = transform.rotation.x
-          const rosQy = transform.rotation.y
-          const rosQz = transform.rotation.z
-          const rosQw = transform.rotation.w
-
-          const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
-          // 坐标系统转换旋转矩阵：
-          // 1. 绕Y轴旋转-90度：将ROS的XZ平面旋转到THREE.js的XZ平面
-          // 2. 绕Z轴旋转180度：将ROS的Y轴（向左）翻转到THREE.js的X轴（向右）
-          const coordRotY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
-          const coordRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI) // 绕Z轴旋转180度
-          const threeQuat = new THREE.Quaternion()
-          threeQuat.multiplyQuaternions(coordRotZ, coordRotY)
-          threeQuat.multiplyQuaternions(threeQuat, rosQuat)
-
-          const localTransform = new THREE.Matrix4()
-          localTransform.compose(
-            new THREE.Vector3(threeX, threeY, threeZ),
-            threeQuat,
-            new THREE.Vector3(1, 1, 1)
-          )
-
-          result = result.multiply(localTransform)
-        }
-        return result
-      }
-
-      // 尝试从 frameName 向下查找路径到 fixedFrame（frameName 是 fixedFrame 的祖先）
-      const pathUp: string[] = []
-      const foundUp = findPath(frameName, fixedFrame, new Set(), pathUp)
-
-      if (foundUp) {
-        // 沿着路径累积变换（从 frameName 到 fixedFrame），然后取逆
-        let transformToFixed = new THREE.Matrix4().identity()
-        for (let i = pathUp.length - 1; i > 0; i--) {
-          const parent = pathUp[i]
-          const child = pathUp[i - 1]
-          if (!parent || !child) continue
-          const parentTransforms = transforms.get(parent)
-          if (!parentTransforms) continue
-          const transform = parentTransforms.get(child)
-          if (!transform || !transform.translation || !transform.rotation) continue
-
-          const rosX = transform.translation.x
-          const rosY = transform.translation.y
-          const rosZ = transform.translation.z
-          // ROS 右手坐标系 → THREE.js 坐标系转换
-          // ROS: X向前, Y向左, Z向上
-          // THREE.js: X向右, Y向上, Z向前
-          // 位置转换：ROS (X,Y,Z) → THREE.js (Z,-X,Y)
-          // 经过旋转矩阵（绕Y轴-90度，然后绕Z轴180度）后：
-          // ROS X(向前) → THREE.js Z(向前)
-          // ROS Y(向左) → THREE.js X(向右，因为旋转矩阵会翻转)
-          // ROS Z(向上) → THREE.js Y(向上)
-          const threeX = -rosY   // ROS Y (向左) → THREE.js -X，经过旋转矩阵后变为 +X
-          const threeY = rosZ    // ROS Z (向上) → THREE.js Y
-          const threeZ = rosX    // ROS X (向前) → THREE.js Z
-
-          const rosQx = transform.rotation.x
-          const rosQy = transform.rotation.y
-          const rosQz = transform.rotation.z
-          const rosQw = transform.rotation.w
-
-          const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
-          // 坐标系统转换旋转矩阵：
-          // 1. 绕Y轴旋转-90度：将ROS的XZ平面旋转到THREE.js的XZ平面
-          // 2. 绕Z轴旋转180度：将ROS的Y轴（向左）翻转到THREE.js的X轴（向右）
-          const coordRotY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
-          const coordRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI) // 绕Z轴旋转180度
-          const threeQuat = new THREE.Quaternion()
-          threeQuat.multiplyQuaternions(coordRotZ, coordRotY)
-          threeQuat.multiplyQuaternions(threeQuat, rosQuat)
-
-          const localTransform = new THREE.Matrix4()
-          localTransform.compose(
-            new THREE.Vector3(threeX, threeY, threeZ),
-            threeQuat,
-            new THREE.Vector3(1, 1, 1)
-          )
-
-          transformToFixed = transformToFixed.multiply(localTransform)
-        }
-        // 取逆得到从 fixedFrame 到 frameName 的变换
-        return transformToFixed.clone().invert()
-      }
-
-      return null
-    }
-
-    // 递归渲染 TF 树
-    // 修改：即使父节点未启用，也继续递归检查子节点
-    const renderTFFrame = (node: any, parentWorldTransform?: THREE.Matrix4) => {
-      const isEnabled = enabledFrames.has(node.name)
-      let worldTransform: THREE.Matrix4 | null = null
-      
-      // 计算节点的世界变换（无论是否启用，都需要存储位置用于绘制箭头）
-      worldTransform = getFrameTransformToFixed(node.name)
-      
-      // 如果无法找到到固定帧的路径，尝试使用父节点变换（向后兼容）
-      if (!worldTransform) {
-        let localTransform = new THREE.Matrix4().identity()
-        
-        if (node.parent && transforms.has(node.parent)) {
-          const parentTransforms = transforms.get(node.parent)!
-          const transform = parentTransforms.get(node.name)
-          
-          if (transform && transform.translation && transform.rotation) {
-            const rosX = transform.translation.x
-            const rosY = transform.translation.y
-            const rosZ = transform.translation.z
-            // 右手系坐标转换：Y轴从-X变成+X
-            const threeX = rosY   // ROS Y (向右，右手系) → THREE.js +X
-            const threeY = rosZ   // ROS Z (向上) → THREE.js Y
-            const threeZ = rosX   // ROS X (向前) → THREE.js Z
-            
-            const rosQx = transform.rotation.x
-            const rosQy = transform.rotation.y
-            const rosQz = transform.rotation.z
-            const rosQw = transform.rotation.w
-            
-            const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
-            // 右手系坐标转换：先绕Y轴旋转-90度，然后绕Z轴旋转180度（Y轴从-X变成+X）
-            const coordRotY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
-            const coordRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
-            const threeQuat = new THREE.Quaternion()
-            threeQuat.multiplyQuaternions(coordRotZ, coordRotY)
-            threeQuat.multiplyQuaternions(threeQuat, rosQuat)
-            
-            localTransform.compose(
-              new THREE.Vector3(threeX, threeY, threeZ),
-              threeQuat,
-              new THREE.Vector3(1, 1, 1)
-            )
-          }
-        }
-
-        worldTransform = localTransform.clone()
-        if (parentWorldTransform) {
-          worldTransform = parentWorldTransform.clone().multiply(localTransform)
-        }
-      }
-      
-      // 如果计算出了变换，存储位置（无论节点是否启用，都需要用于绘制箭头）
-      if (worldTransform) {
-        const position = new THREE.Vector3()
-        const quaternion = new THREE.Quaternion()
-        const scale = new THREE.Vector3(1, 1, 1)
-        worldTransform.decompose(position, quaternion, scale)
-        
-        // 存储位置（用于绘制连接线）
-        framePositions.set(node.name, position.clone())
-      }
-      
-      // 如果当前节点被启用，渲染它
-      if (isEnabled && worldTransform) {
-        // 计算相对于固定帧的变换（而不是相对于父节点）
-        // 这样即使父节点未启用，也能正确显示子节点
-        worldTransform = getFrameTransformToFixed(node.name)
-        
-        // 如果无法找到到固定帧的路径，尝试使用父节点变换（向后兼容）
-        if (!worldTransform) {
-          let localTransform = new THREE.Matrix4().identity()
-          
-          if (node.parent && transforms.has(node.parent)) {
-            const parentTransforms = transforms.get(node.parent)!
-            const transform = parentTransforms.get(node.name)
-            
-            if (transform && transform.translation && transform.rotation) {
-              const rosX = transform.translation.x
-              const rosY = transform.translation.y
-              const rosZ = transform.translation.z
-              // 右手系坐标转换：Y轴从-X变成+X
-              const threeX = rosY   // ROS Y (向右，右手系) → THREE.js +X
-              const threeY = rosZ   // ROS Z (向上) → THREE.js Y
-              const threeZ = rosX   // ROS X (向前) → THREE.js Z
-              
-              const rosQx = transform.rotation.x
-              const rosQy = transform.rotation.y
-              const rosQz = transform.rotation.z
-              const rosQw = transform.rotation.w
-              
-              const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
-              // 右手系坐标转换：先绕Y轴旋转-90度，然后绕Z轴旋转180度（Y轴从-X变成+X）
-              const coordRotY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
-              const coordRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
-              const threeQuat = new THREE.Quaternion()
-              threeQuat.multiplyQuaternions(coordRotZ, coordRotY)
-              threeQuat.multiplyQuaternions(threeQuat, rosQuat)
-              
-              localTransform.compose(
-                new THREE.Vector3(threeX, threeY, threeZ),
-                threeQuat,
-                new THREE.Vector3(1, 1, 1)
-              )
-            }
-          }
-
-          worldTransform = localTransform.clone()
-          if (parentWorldTransform) {
-            worldTransform = parentWorldTransform.clone().multiply(localTransform)
-          }
-        }
-        
-        if (!worldTransform) {
-          // 如果无法计算变换，跳过渲染，但继续递归子节点
-          if (node.children && node.children.length > 0) {
-            node.children.forEach((child: any) => {
-              renderTFFrame(child, undefined)
-            })
-          }
-          return
-        }
-
-        // 提取位置和旋转
-        const position = new THREE.Vector3()
-        const quaternion = new THREE.Quaternion()
-        const scale = new THREE.Vector3(1, 1, 1)
-        worldTransform.decompose(position, quaternion, scale)
-        
-        // 存储位置（用于绘制连接线）
-        framePositions.set(node.name, position.clone())
-
-        // 创建 frame 组
-        const frameGroup = new THREE.Group()
-        frameGroup.position.copy(position)
-        frameGroup.quaternion.copy(quaternion)
-        frameGroup.userData.frameName = node.name
-        frameGroup.userData.componentId = componentId
-
-        // 显示坐标轴（红色X、绿色Y、蓝色Z）- 右手系
-        if (showAxes) {
-          const axisLength = 0.3 * markerScale
-          
-          // X轴（红色）- ROS X 向前，对应 THREE.js Z 方向
-          const xGeometry = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(0, 0, axisLength)
-          ])
-          const xMaterial = new THREE.LineBasicMaterial({ 
-            color: 0xff0000, 
-            transparent: true, 
-            opacity: markerAlpha 
-          })
-          const xAxis = new THREE.Line(xGeometry, xMaterial)
-          frameGroup.add(xAxis)
-
-          // Y轴（绿色）- ROS Y 向左（标准ROS右手系），经过旋转矩阵后对应 THREE.js +X 方向
-          const yGeometry = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(axisLength, 0, 0)
-          ])
-          const yMaterial = new THREE.LineBasicMaterial({ 
-            color: 0x00ff00, 
-            transparent: true, 
-            opacity: markerAlpha 
-          })
-          const yAxis = new THREE.Line(yGeometry, yMaterial)
-          frameGroup.add(yAxis)
-
-          // Z轴（蓝色）- ROS Z 向上，对应 THREE.js Y 方向
-          const zGeometry = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(0, axisLength, 0)
-          ])
-          const zMaterial = new THREE.LineBasicMaterial({ 
-            color: 0x0000ff, 
-            transparent: true, 
-            opacity: markerAlpha 
-          })
-          const zAxis = new THREE.Line(zGeometry, zMaterial)
-          frameGroup.add(zAxis)
-        }
-
-        // 显示名称（使用 CSS2DRenderer 或 Canvas 纹理）
-        if (showNames) {
-          // 创建文本标签（使用 Canvas 纹理）
-          const canvas = document.createElement('canvas')
-          const context = canvas.getContext('2d')!
-          canvas.width = 256
-          canvas.height = 64
-          
-          context.fillStyle = 'rgba(255, 255, 255, ' + markerAlpha + ')'
-          context.font = 'Bold 24px Arial'
-          context.fillText(node.name, 10, 40)
-          
-          const texture = new THREE.CanvasTexture(canvas)
-          const spriteMaterial = new THREE.SpriteMaterial({
-            map: texture,
-            transparent: true,
-            opacity: markerAlpha
-          })
-          const sprite = new THREE.Sprite(spriteMaterial)
-          sprite.scale.set(0.5 * markerScale, 0.125 * markerScale, 1)
-          sprite.position.set(0, 0.2 * markerScale, 0)
-          sprite.userData.frameName = node.name
-          frameGroup.add(sprite)
-        }
-
-        tfGroup.add(frameGroup)
-      }
-
-      // 递归渲染子节点（无论当前节点是否启用，都要检查子节点）
-      if (node.children && node.children.length > 0) {
-        node.children.forEach((child: any) => {
-          // 如果当前节点启用且有 worldTransform，传递它；否则传递 undefined（让子节点自己计算）
-          const childParentTransform = (isEnabled && worldTransform) ? worldTransform : undefined
-          renderTFFrame(child, childParentTransform)
+    // 配置每个启用的 frame 的显示选项
+    enabledFrames.forEach(frameName => {
+      const frameObject = tfRenderer!.getFrame(frameName)
+      if (frameObject) {
+        // 配置显示选项
+        tfRenderer!.configureFrame(frameName, {
+          showAxes,
+          showNames,
+          markerScale,
+          markerAlpha
         })
+        
+        // 设置可见性
+        tfRenderer!.setFrameVisibility(frameName, true)
       }
-    }
-
-    // 渲染所有根节点
-    tfTree.forEach(rootNode => {
-      renderTFFrame(rootNode)
     })
+
+    // 隐藏未启用的 frames
+    tfRenderer.getAllFrameNames().forEach(frameName => {
+      if (!enabledFrames.has(frameName)) {
+        tfRenderer!.setFrameVisibility(frameName, false)
+      }
+    })
+
+    // TODO: 实现箭头连接线绘制（showArrows）
+    // 如果需要显示箭头，可以遍历 TF 树，在父子 frame 之间绘制箭头
   }
 
   /**
@@ -1295,6 +996,12 @@ export function use3DRenderer(scene: THREE.Scene) {
    * 清理渲染对象
    */
   const cleanup = () => {
+    // 清理 TF 渲染器
+    if (tfRenderer) {
+      tfRenderer.dispose()
+      tfRenderer = null
+    }
+
     Object.values(renderObjects.value).forEach((obj) => {
       if (obj && obj.geometry) {
         obj.geometry.dispose()

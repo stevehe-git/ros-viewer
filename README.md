@@ -568,6 +568,163 @@ ros-viewer/
   - 添加默认 frame 渲染逻辑
   - 更新坐标转换注释
 
+---
+
+### 2024-12-XX - TF 渲染器架构重构
+
+#### 🎯 重构概述
+
+根据核心结论重构了整个 TF 数据订阅和渲染逻辑，确保与 RViz 完全一致。本次重构采用全新的架构设计，将 TF 渲染逻辑完全分离，使用正确的坐标转换公式，严格还原 ROS TF 树的层级结构。
+
+#### 📐 核心原理（必须牢记）
+
+**ROS 与 THREE.js 的坐标系差异**：
+
+- **ROS (RViz) 标准坐标系**：右手坐标系
+  - X 轴 → 机器人正前方
+  - Y 轴 → 机器人左侧方
+  - Z 轴 → 垂直地面正上方
+
+- **THREE.js 标准坐标系**：右手坐标系
+  - X 轴 → 屏幕右侧方
+  - Y 轴 → 屏幕正上方
+  - Z 轴 → 屏幕正前方（朝向自己）
+
+**唯一正确的坐标转换公式**：
+
+```typescript
+// ROS 原始平移数据: ros_x, ros_y, ros_z
+const three_x = ros_x;    // ROS X → THREE.js X
+const three_y = ros_z;    // ROS Z → THREE.js Y
+const three_z = -ros_y;   // ROS Y → THREE.js -Z（取反）
+```
+
+**关键点**：
+- ROS 的 Z 轴对应 THREE.js 的 Y 轴（垂直高度）
+- ROS 的 Y 轴取反对应 THREE.js 的 Z 轴（解决左右方向颠倒）
+- ROS 的 X 轴直接对应 THREE.js 的 X 轴（前进方向一致）
+
+**四元数处理**：
+
+ROS 和 THREE.js 的四元数数学定义完全相同，分量一一对应，直接赋值即可，无需任何修改。轴向映射已包含在平移坐标转换中，不需要对四元数做额外修改。
+
+```typescript
+// ROS 四元数：{x: qx, y: qy, z: qz, w: qw}
+// THREE.js 四元数：THREE.Quaternion(qx, qy, qz, qw)
+mesh.quaternion.set(ros_qx, ros_qy, ros_qz, ros_qw);
+```
+
+#### 🏗️ 架构重构
+
+**1. 创建 TFRenderer 服务类**
+
+新增文件：`src/services/tfRenderer.ts`
+
+**职责**：
+- TF 层级结构管理
+- 坐标转换应用
+- 坐标轴和标签渲染
+- 资源清理
+
+**核心方法**：
+- `buildFrameHierarchy()`: 根据 TF 树构建 THREE.js Group 层级
+- `applyTransform()`: 应用 ROS Transform 到 THREE.js Group（使用正确的坐标转换）
+- `addAxes()`: 添加坐标轴可视化
+- `addLabel()`: 添加名称标签
+- `updateAllTransforms()`: 更新所有 frame 的变换数据
+
+**2. 重构 use3DRenderer.ts**
+
+**主要变更**：
+- 引入 `TFRenderer` 类
+- 简化 `updateTFRender()` 函数
+- 移除复杂的路径查找和矩阵累积逻辑
+- 使用 Group 父子关系直接还原 TF 树
+
+**3. 坐标转换工具**
+
+文件：`src/services/coordinateConverter.ts`（已存在）
+
+**功能**：
+- `convertROSTranslationToThree()`: 平移坐标转换
+- `convertROSRotationToThree()`: 四元数转换（直接赋值）
+- `applyROSTransformToObject()`: 便捷函数，同时应用平移和旋转
+
+#### 🔧 关键实现细节
+
+**1. 层级关系建立**
+
+使用 THREE.Group 建立父子关系，严格还原 ROS TF 树的层级结构：
+
+```typescript
+// ✅ 正确方式：使用 Group 建立父子关系
+const mapFrame = new THREE.Group()
+const odomFrame = new THREE.Group()
+const baseLinkFrame = new THREE.Group()
+const baseScanFrame = new THREE.Group()
+
+// 严格建立父子关系（和 ROS TF 树完全一致）
+mapFrame.add(odomFrame)
+odomFrame.add(baseLinkFrame)
+baseLinkFrame.add(baseScanFrame)
+
+scene.add(mapFrame)  // 只添加根节点
+```
+
+**为什么必须这么做**：
+- 子对象的坐标永远是相对父对象的本地坐标
+- Three.js 自动计算世界坐标
+- 和 ROS 的 TF 逻辑完全一致
+
+**2. 坐标转换应用**
+
+```typescript
+// ✅ 应用 map→odom 的 TF 数据（本地坐标）
+odomFrame.position.set(ros_x, ros_z, -ros_y)  // 平移转换
+odomFrame.quaternion.set(ros_qx, ros_qy, ros_qz, ros_qw)  // 四元数直接赋值
+```
+
+**3. 坐标轴渲染**
+
+根据坐标转换公式，坐标轴应该这样绘制：
+- **X 轴（红色）**：沿着 THREE.js 的 X 方向（对应 ROS X 向前）
+- **Y 轴（绿色）**：沿着 THREE.js 的 -Z 方向（对应 ROS Y 向左）
+- **Z 轴（蓝色）**：沿着 THREE.js 的 Y 方向（对应 ROS Z 向上）
+
+#### ✨ 重构优势
+
+1. **逻辑清晰**：坐标转换、TF树构建、渲染完全分离
+2. **易于维护**：TFRenderer 类封装所有 TF 相关逻辑
+3. **性能优化**：避免重复计算，使用 Group 层级自动计算世界坐标
+4. **正确性保证**：严格遵循 ROS TF 树的层级结构
+5. **代码复用**：坐标转换逻辑可在其他地方复用
+
+#### ✅ 验证要点
+
+修复后，在俯视 XY 平面时应该看到：
+- base_scan 和 base_footprint 的 X 轴和 Y 轴大小和方向与 RViz 完全一致
+- 所有 frame 的坐标轴颜色和方向正确显示
+- 坐标变换路径正确，父子关系正确还原
+
+#### 📁 文件变更
+
+**新增文件**：
+- `src/services/tfRenderer.ts` - TF 渲染器服务类
+
+**修改文件**：
+- `src/composables/use3DRenderer.ts` - 重构 TF 渲染逻辑，使用新的 TFRenderer 类
+- `src/services/coordinateConverter.ts` - 已存在，提供坐标转换工具
+
+**保持不变**：
+- `src/services/tfManager.ts` - TF 数据管理逻辑不变
+
+#### ⚠️ 注意事项
+
+1. **不要使用欧拉角**：ROS 和 THREE.js 都优先使用四元数，避免万向锁问题
+2. **不要手动计算世界坐标**：使用 Group 父子关系，Three.js 自动计算
+3. **不要修改四元数分量**：直接赋值即可，轴向映射已包含在平移转换中
+4. **确保父子关系正确**：这是保证所有坐标变换正确的核心前提
+
 ## 🤝 贡献指南
 
 欢迎贡献代码！请遵循以下步骤：
