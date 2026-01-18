@@ -753,8 +753,14 @@ const handleAxesOptionsUpdate = (options: any) => {
   if (options.enabled !== undefined) {
     rvizStore.sceneState.showAxes = options.enabled
   }
-  // 重新创建坐标轴以应用所有选项变化
-  updateAxesHelper()
+  // 使用新的渲染函数更新 axes
+  const axesComponent = rvizStore.displayComponents.find(c => c.type === 'axes')
+  if (renderer3D && axesComponent) {
+    renderer3D.updateComponentRender(axesComponent.id, 'axes', {})
+  } else {
+    // 如果没有 renderer3D，使用旧的 updateAxesHelper（向后兼容）
+    updateAxesHelper()
+  }
 }
 
 // 处理添加显示项
@@ -924,8 +930,15 @@ watch(() => {
 watch(() => {
   const axesComponent = rvizStore.displayComponents.find(c => c.type === 'axes')
   return axesComponent?.options
-}, () => {
-  updateAxesHelper()
+}, (newOptions, oldOptions) => {
+  const axesComponent = rvizStore.displayComponents.find(c => c.type === 'axes')
+  if (renderer3D && axesComponent) {
+    // 使用新的渲染函数更新 axes
+    renderer3D.updateComponentRender(axesComponent.id, 'axes', {})
+  } else {
+    // 如果没有 renderer3D，使用旧的 updateAxesHelper（向后兼容）
+    updateAxesHelper()
+  }
 }, { deep: true })
 
 // 检查topic是否有效
@@ -1090,11 +1103,24 @@ watch(() => rvizStore.displayComponents, () => {
 
   // 遍历所有组件，检查数据变化并更新渲染
   rvizStore.displayComponents.forEach((component) => {
-    // 跳过不需要数据的组件（grid, axes）
-    // TF 组件从 tfManager 获取数据，不需要从订阅管理器获取
-    if (component.type === 'grid' || component.type === 'axes') {
+    // 跳过不需要数据的组件（grid）
+    // Axes 组件需要根据 referenceFrame 更新位置，需要调用渲染函数
+    if (component.type === 'grid') {
       return
     }
+
+    // Axes 组件特殊处理：根据 referenceFrame 更新位置
+    if (component.type === 'axes') {
+      if (component.enabled && renderer3D) {
+        renderer3D.updateComponentRender(component.id, component.type, {})
+        updateComponentVisibility(component.id, component.type)
+      } else if (renderer3D) {
+        renderer3D.setComponentVisibility(component.type, false, component.id)
+      }
+      return
+    }
+
+    // TF 组件从 tfManager 获取数据，不需要从订阅管理器获取
 
     // TF 组件特殊处理：从 tfManager 获取数据
     if (component.type === 'tf') {

@@ -9,6 +9,10 @@ import { useRvizStore } from '@/stores/rviz'
 import { DataConverter } from '@/services/dataConverter'
 import { tfManager } from '@/services/tfManager'
 import { TFRenderer } from '@/services/tfRenderer'
+import { 
+  convertROSTranslationToThree, 
+  convertROSRotationToThree 
+} from '@/services/coordinateConverter'
 
 export interface RendererObjects {
   mapMesh?: THREE.Mesh
@@ -20,6 +24,7 @@ export interface RendererObjects {
   pointcloudPoints?: THREE.Points
   pointcloudGroup?: THREE.Group // 支持多个 PointCloud2 组件
   tfGroup?: THREE.Group // TF 可视化组
+  axesGroup?: THREE.Group // 支持多个 Axes 组件
   [key: string]: any
 }
 
@@ -883,6 +888,183 @@ export function use3DRenderer(scene: THREE.Scene) {
   }
 
   /**
+   * 更新 Axes 渲染
+   * 
+   * 根据选择的 referenceFrame，将 axes 渲染到对应的坐标系位置
+   * 使用正确的坐标转换公式：ROS(x, y, z) → THREE.js(x, z, -y)
+   */
+  function updateAxesRender(componentId: string) {
+    // 获取组件配置
+    const component = rvizStore.displayComponents.find(c => c.id === componentId)
+    if (!component) return
+
+    const options = component.options || {}
+    const referenceFrame = options.referenceFrame || rvizStore.globalOptions.fixedFrame || 'map'
+    const length = options.length ?? 1
+    const radius = options.radius ?? 0.1
+    const alpha = options.alpha ?? 1
+    const showTrail = options.showTrail ?? false
+
+    // 创建或获取 Axes 组
+    let axesGroup = renderObjects.value.axesGroup
+    if (!axesGroup) {
+      axesGroup = new THREE.Group()
+      axesGroup.name = 'Axes_Group'
+      renderObjects.value.axesGroup = axesGroup
+      scene.add(axesGroup)
+    }
+
+    // 查找或创建该组件的 axes 对象
+    let axesObject = axesGroup.children.find(
+      child => child.userData.componentId === componentId
+    ) as THREE.Group | undefined
+
+    if (!axesObject) {
+      axesObject = new THREE.Group()
+      axesObject.name = `Axes_${componentId}`
+      axesObject.userData.componentId = componentId
+      axesGroup.add(axesObject)
+    }
+
+    // 清理旧的坐标轴
+    const oldAxes = [...axesObject.children]
+    oldAxes.forEach(child => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose()
+        if (child.material instanceof THREE.Material) {
+          child.material.dispose()
+        }
+      }
+      axesObject!.remove(child)
+    })
+
+    // 获取固定帧
+    const fixedFrame = rvizStore.globalOptions.fixedFrame || 'map'
+
+    // 计算 referenceFrame 相对于固定帧的变换
+    const getFrameTransformToFixed = (frameName: string): THREE.Matrix4 | null => {
+      if (frameName === fixedFrame) {
+        return new THREE.Matrix4().identity()
+      }
+
+      const transforms = tfManager.getTransforms()
+      
+      // 查找路径的辅助函数
+      const findPath = (current: string, target: string, visited: Set<string>, path: string[]): boolean => {
+        if (current === target) {
+          path.push(current)
+          return true
+        }
+        if (visited.has(current)) return false
+        visited.add(current)
+
+        // 查找 current 的所有子节点
+        for (const [parent, children] of transforms.entries()) {
+          if (parent === current) {
+            for (const [childName, transform] of children.entries()) {
+              if (findPath(childName, target, visited, path)) {
+                path.push(current)
+                return true
+              }
+            }
+          }
+        }
+        return false
+      }
+
+      // 尝试从 fixedFrame 向下查找路径到 frameName
+      const pathDown: string[] = []
+      const foundDown = findPath(fixedFrame, frameName, new Set(), pathDown)
+
+      if (foundDown) {
+        // 沿着路径累积变换（从 fixedFrame 到 frameName）
+        let result = new THREE.Matrix4().identity()
+        for (let i = pathDown.length - 1; i > 0; i--) {
+          const parent = pathDown[i]
+          const child = pathDown[i - 1]
+          if (!parent || !child) continue
+          const parentTransforms = transforms.get(parent)
+          if (!parentTransforms) continue
+          const transform = parentTransforms.get(child)
+          if (!transform || !transform.translation || !transform.rotation) continue
+
+          // ✅ 使用正确的坐标转换公式：ROS(x, y, z) → THREE.js(x, z, -y)
+          const position = convertROSTranslationToThree(transform.translation)
+          const quaternion = convertROSRotationToThree(transform.rotation)
+
+          const localTransform = new THREE.Matrix4()
+          localTransform.compose(
+            position,
+            quaternion,
+            new THREE.Vector3(1, 1, 1)
+          )
+
+          result = result.multiply(localTransform)
+        }
+        return result
+      }
+
+      return null
+    }
+
+    const transform = getFrameTransformToFixed(referenceFrame)
+    
+    if (transform) {
+      // 提取位置和旋转
+      const position = new THREE.Vector3()
+      const quaternion = new THREE.Quaternion()
+      const scale = new THREE.Vector3(1, 1, 1)
+      transform.decompose(position, quaternion, scale)
+
+      // 设置 axes 的位置和旋转
+      axesObject.position.copy(position)
+      axesObject.quaternion.copy(quaternion)
+    } else {
+      // 如果找不到变换，设置为原点
+      axesObject.position.set(0, 0, 0)
+      axesObject.quaternion.set(0, 0, 0, 1)
+    }
+
+    // 创建坐标轴（使用圆柱体）
+    // X 轴（红色）- ROS X 向前 → THREE.js X 方向
+    const xGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
+    const xMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0xff0000,
+      transparent: true,
+      opacity: alpha
+    })
+    const xAxis = new THREE.Mesh(xGeometry, xMaterial)
+    xAxis.rotation.z = Math.PI / 2
+    xAxis.position.x = length / 2
+    axesObject.add(xAxis)
+
+    // Y 轴（绿色）- ROS Y 向左 → THREE.js -Z 方向
+    const yGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
+    const yMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0x00ff00,
+      transparent: true,
+      opacity: alpha
+    })
+    const yAxis = new THREE.Mesh(yGeometry, yMaterial)
+    yAxis.rotation.x = Math.PI / 2
+    yAxis.position.z = -length / 2  // 负 Z 方向（对应 ROS Y 向左）
+    axesObject.add(yAxis)
+
+    // Z 轴（蓝色）- ROS Z 向上 → THREE.js Y 方向
+    const zGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
+    const zMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0x0000ff,
+      transparent: true,
+      opacity: alpha
+    })
+    const zAxis = new THREE.Mesh(zGeometry, zMaterial)
+    zAxis.position.y = length / 2  // Y 方向（向上，对应 ROS Z）
+    axesObject.add(zAxis)
+
+    // TODO: 实现 Show Trail 功能（如果需要）
+  }
+
+  /**
    * 从字节数组中读取 Float32
    */
   const readFloat32 = (data: Uint8Array, offset: number): number => {
@@ -941,6 +1123,9 @@ export function use3DRenderer(scene: THREE.Scene) {
       case 'tf':
         updateTFRender(componentId)
         break
+      case 'axes':
+        updateAxesRender(componentId)
+        break
       default:
         break
     }
@@ -985,6 +1170,19 @@ export function use3DRenderer(scene: THREE.Scene) {
         } else if (renderObjects.value.pointcloudGroup) {
           // 设置所有 PointCloud2 的可见性
           renderObjects.value.pointcloudGroup.visible = visible
+        }
+        break
+      case 'axes':
+        if (renderObjects.value.axesGroup && componentId) {
+          // 设置特定组件的可见性
+          renderObjects.value.axesGroup.children.forEach(child => {
+            if (child.userData.componentId === componentId) {
+              child.visible = visible
+            }
+          })
+        } else if (renderObjects.value.axesGroup) {
+          // 设置所有 Axes 的可见性
+          renderObjects.value.axesGroup.visible = visible
         }
         break
       default:

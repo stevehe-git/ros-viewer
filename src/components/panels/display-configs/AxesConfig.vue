@@ -3,12 +3,23 @@
     <div class="config-row">
       <span class="config-label">Reference Frame</span>
       <el-select
-        :model-value="options.referenceFrame"
+        :model-value="options.referenceFrame || fixedFrame"
         @update:model-value="update('referenceFrame', $event)"
         size="small"
         class="config-value"
+        placeholder="选择参考坐标系"
+        filterable
       >
-        <el-option label="<Fixed Frame>" value="<Fixed Frame>" />
+        <el-option 
+          :label="`<Fixed Frame: ${fixedFrame}>`" 
+          :value="fixedFrame" 
+        />
+        <el-option
+          v-for="frame in availableFrames"
+          :key="frame"
+          :label="frame"
+          :value="frame"
+        />
       </el-select>
     </div>
     <div class="config-row">
@@ -59,7 +70,9 @@
 </template>
 
 <script setup lang="ts">
+import { computed, watch } from 'vue'
 import { useRvizStore } from '@/stores/rviz'
+import { tfManager } from '@/services/tfManager'
 
 interface Props {
   componentId: string
@@ -69,9 +82,28 @@ interface Props {
 const props = defineProps<Props>()
 const rvizStore = useRvizStore()
 
+// 获取固定帧
+const fixedFrame = computed(() => {
+  return rvizStore.globalOptions.fixedFrame || 'map'
+})
+
+// 获取所有可用的 frame 列表
+const availableFrames = computed(() => {
+  const frames = tfManager.getFrames()
+  // 过滤掉固定帧（已经在第一个选项中显示）
+  return frames.filter(frame => frame !== fixedFrame.value)
+})
+
 const update = (key: string, value: any) => {
   rvizStore.updateComponentOptions(props.componentId, { [key]: value })
 }
+
+// 监听固定帧变化，如果当前选择的 referenceFrame 是旧的固定帧，则更新为新的固定帧
+watch(fixedFrame, (newFixedFrame, oldFixedFrame) => {
+  if (props.options.referenceFrame === oldFixedFrame) {
+    update('referenceFrame', newFixedFrame)
+  }
+})
 </script>
 
 <style scoped>
