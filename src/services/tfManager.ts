@@ -51,6 +51,33 @@ class TFManager {
   // Frame 超时时间（秒）
   private frameTimeout = 15
   
+  // 订阅状态（响应式）
+  private subscriptionStatus = ref<{
+    subscribed: boolean
+    hasData: boolean
+    messageCount: number
+    lastMessageTime: number | null
+  }>({
+    subscribed: false,
+    hasData: false,
+    messageCount: 0,
+    lastMessageTime: null
+  })
+  
+  /**
+   * 获取订阅状态
+   */
+  getSubscriptionStatus() {
+    return this.subscriptionStatus.value
+  }
+  
+  /**
+   * 获取响应式的订阅状态
+   */
+  getSubscriptionStatusRef() {
+    return this.subscriptionStatus
+  }
+  
   /**
    * 获取数据更新触发器（用于响应式追踪）
    */
@@ -126,9 +153,25 @@ class TFManager {
    * 订阅 TF 话题
    */
   private subscribe() {
-    if (!this.rosInstance) return
+    if (!this.rosInstance) {
+      this.subscriptionStatus.value = {
+        subscribed: false,
+        hasData: false,
+        messageCount: 0,
+        lastMessageTime: null
+      }
+      return
+    }
 
     try {
+      // 更新订阅状态
+      this.subscriptionStatus.value = {
+        subscribed: true,
+        hasData: false,
+        messageCount: 0,
+        lastMessageTime: null
+      }
+      
       // 订阅 /tf 话题（动态坐标变换）
       this.tfTopic = new ROSLIB.Topic({
         ros: this.rosInstance,
@@ -138,8 +181,17 @@ class TFManager {
 
       this.tfTopic.subscribe((message: any) => {
         // console.log('TFManager: Received /tf message', message)
+        const now = Date.now()
+        
+        // 更新订阅状态
+        this.subscriptionStatus.value = {
+          subscribed: true,
+          hasData: true,
+          messageCount: this.subscriptionStatus.value.messageCount + 1,
+          lastMessageTime: now
+        }
+        
         if (message && message.transforms && Array.isArray(message.transforms)) {
-          const now = Date.now()
           message.transforms.forEach((transform: any) => {
             if (transform.header && transform.header.frame_id) {
               const frameId = transform.header.frame_id
@@ -200,8 +252,17 @@ class TFManager {
 
       this.tfStaticTopic.subscribe((message: any) => {
         // console.log('TFManager: Received /tf_static message', message)
+        const now = Date.now()
+        
+        // 更新订阅状态（静态 TF 也计入消息计数）
+        this.subscriptionStatus.value = {
+          subscribed: true,
+          hasData: true,
+          messageCount: this.subscriptionStatus.value.messageCount + 1,
+          lastMessageTime: now
+        }
+        
         if (message && message.transforms && Array.isArray(message.transforms)) {
-          const now = Date.now()
           message.transforms.forEach((transform: any) => {
             if (transform.header && transform.header.frame_id) {
               const frameId = transform.header.frame_id
@@ -255,6 +316,13 @@ class TFManager {
       console.log('TFManager: Subscribed to /tf and /tf_static topics')
     } catch (error) {
       console.error('TFManager: Error subscribing to TF topics:', error)
+      // 更新订阅状态为错误
+      this.subscriptionStatus.value = {
+        subscribed: false,
+        hasData: false,
+        messageCount: 0,
+        lastMessageTime: null
+      }
     }
   }
 
@@ -262,6 +330,14 @@ class TFManager {
    * 取消订阅
    */
   private unsubscribe() {
+    // 更新订阅状态
+    this.subscriptionStatus.value = {
+      subscribed: false,
+      hasData: false,
+      messageCount: 0,
+      lastMessageTime: null
+    }
+    
     if (this.tfTopic) {
       try {
         this.tfTopic.unsubscribe()

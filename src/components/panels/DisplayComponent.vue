@@ -30,13 +30,13 @@
           <el-icon 
             class="sub-item-icon" 
             :class="{
-              'success-icon': subscriptionStatus.subscribed && subscriptionStatus.hasData,
-              'warning-icon': subscriptionStatus.subscribed && !subscriptionStatus.hasData,
-              'error-icon': subscriptionStatus.error
+              'success-icon': (component.type === 'tf' ? (tfSubscriptionStatus?.subscribed && tfSubscriptionStatus?.hasData) : (subscriptionStatus.subscribed && subscriptionStatus.hasData)),
+              'warning-icon': (component.type === 'tf' ? (tfSubscriptionStatus?.subscribed && !tfSubscriptionStatus?.hasData) : (subscriptionStatus.subscribed && !subscriptionStatus.hasData)),
+              'error-icon': (component.type === 'tf' ? false : subscriptionStatus.error)
             }"
           >
-            <CircleCheck v-if="subscriptionStatus.subscribed && subscriptionStatus.hasData" />
-            <Warning v-else-if="subscriptionStatus.error" />
+            <CircleCheck v-if="(component.type === 'tf' ? (tfSubscriptionStatus?.subscribed && tfSubscriptionStatus?.hasData) : (subscriptionStatus.subscribed && subscriptionStatus.hasData))" />
+            <Warning v-else-if="(component.type === 'tf' ? false : subscriptionStatus.error)" />
             <CircleCheck v-else />
           </el-icon>
           <span class="sub-item-name">
@@ -50,17 +50,17 @@
           <div class="status-detail">
             <div class="status-row">
               <span class="status-label">Subscribed:</span>
-              <span class="status-value">{{ subscriptionStatus.subscribed ? 'Yes' : 'No' }}</span>
+              <span class="status-value">{{ (component.type === 'tf' ? (tfSubscriptionStatus?.subscribed ?? false) : subscriptionStatus.subscribed) ? 'Yes' : 'No' }}</span>
             </div>
-            <div class="status-row" v-if="subscriptionStatus.subscribed">
+            <div class="status-row" v-if="(component.type === 'tf' ? tfSubscriptionStatus?.subscribed : subscriptionStatus.subscribed)">
               <span class="status-label">Messages:</span>
-              <span class="status-value">{{ subscriptionStatus.messageCount }}</span>
+              <span class="status-value">{{ component.type === 'tf' ? (tfSubscriptionStatus?.messageCount ?? 0) : subscriptionStatus.messageCount }}</span>
             </div>
-            <div class="status-row" v-if="subscriptionStatus.lastMessageTime">
+            <div class="status-row" v-if="(component.type === 'tf' ? tfSubscriptionStatus?.lastMessageTime : subscriptionStatus.lastMessageTime)">
               <span class="status-label">Last Message:</span>
-              <span class="status-value">{{ formatTime(subscriptionStatus.lastMessageTime) }}</span>
+              <span class="status-value">{{ formatTime((component.type === 'tf' ? (tfSubscriptionStatus?.lastMessageTime ?? 0) : subscriptionStatus.lastMessageTime)!) }}</span>
             </div>
-            <div class="status-row" v-if="subscriptionStatus.error">
+            <div class="status-row" v-if="(component.type === 'tf' ? false : subscriptionStatus.error)">
               <span class="status-label error-text">Error:</span>
               <span class="status-value error-text">{{ subscriptionStatus.error }}</span>
             </div>
@@ -107,6 +107,7 @@ import ImageConfig from './display-configs/ImageConfig.vue'
 import LaserScanConfig from './display-configs/LaserScanConfig.vue'
 import PointCloud2Config from './display-configs/PointCloud2Config.vue'
 import TFConfig from './display-configs/TFConfig.vue'
+import { tfManager } from '@/services/tfManager'
 
 // 使用RViz store
 const rvizStore = useRvizStore()
@@ -207,8 +208,32 @@ watch(() => getLatestMessage(), (message) => {
   }
 }, { immediate: true, deep: true })
 
+// 获取 TF 组件的订阅状态（从 tfManager）
+const tfSubscriptionStatus = computed(() => {
+  if (props.component.type === 'tf') {
+    return tfManager.getSubscriptionStatusRef()
+  }
+  return null
+})
+
 // 获取状态文本
 const getStatusText = (): string => {
+  // TF 组件使用 tfManager 的订阅状态
+  if (props.component.type === 'tf') {
+    const tfStatus = tfSubscriptionStatus.value
+    if (!tfStatus) {
+      return 'Not Subscribed'
+    }
+    if (!tfStatus.subscribed) {
+      return 'Not Subscribed'
+    }
+    if (tfStatus.hasData) {
+      return 'Ok'
+    }
+    return 'Waiting for data...'
+  }
+  
+  // 其他组件使用 useTopicSubscription 的状态
   if (subscriptionStatus.value.error) {
     return 'Error'
   }
