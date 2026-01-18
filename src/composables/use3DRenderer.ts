@@ -832,14 +832,50 @@ export function use3DRenderer(scene: THREE.Scene) {
     // buildFrameHierarchy 内部会应用所有变换数据，使用正确的坐标转换公式
     tfRenderer.buildFrameHierarchy(tfTree, transforms)
 
-    // 配置每个启用的 frame 的显示选项
+    // ✅ 对于每个启用的 frame，需要确保它的所有父节点也被显示
+    // 这样即使父节点没有被选中，只要子节点被选中，父节点也会显示
+    const framesToShow = new Set<string>(enabledFrames)
+    
+    // 确保固定帧也在显示列表中（作为根节点）
+    framesToShow.add(fixedFrame)
+    
+    // 查找每个启用 frame 的所有父节点（从 tfManager 获取父节点信息）
+    const findParentPath = (frameName: string, visited: Set<string> = new Set()): string[] => {
+      if (visited.has(frameName)) return [] // 避免循环
+      visited.add(frameName)
+      
+      const path: string[] = []
+      // 从 transforms 中查找 frameName 的父节点
+      for (const [parentName, children] of transforms.entries()) {
+        if (children.has(frameName)) {
+          path.push(parentName)
+          // 递归查找父节点的父节点
+          const parentPath = findParentPath(parentName, visited)
+          path.push(...parentPath)
+          break
+        }
+      }
+      return path
+    }
+    
+    // 为每个启用的 frame 添加其所有父节点到显示列表
     enabledFrames.forEach(frameName => {
+      const parentPath = findParentPath(frameName)
+      parentPath.forEach(parentName => {
+        framesToShow.add(parentName)
+      })
+    })
+    
+    // 配置每个需要显示的 frame 的显示选项
+    framesToShow.forEach(frameName => {
       const frameObject = tfRenderer!.getFrame(frameName)
       if (frameObject) {
-        // 配置显示选项
+        // 如果是启用的 frame，显示完整的配置（axes, names等）
+        // 如果是父节点（未启用但需要显示），只显示基本结构，不显示 axes 和 names
+        const isEnabled = enabledFrames.has(frameName)
         tfRenderer!.configureFrame(frameName, {
-          showAxes,
-          showNames,
+          showAxes: isEnabled ? showAxes : false,
+          showNames: isEnabled ? showNames : false,
           markerScale,
           markerAlpha
         })
@@ -849,9 +885,9 @@ export function use3DRenderer(scene: THREE.Scene) {
       }
     })
 
-    // 隐藏未启用的 frames
+    // 隐藏未启用且不在显示列表中的 frames
     tfRenderer.getAllFrameNames().forEach(frameName => {
-      if (!enabledFrames.has(frameName)) {
+      if (!framesToShow.has(frameName)) {
         tfRenderer!.setFrameVisibility(frameName, false)
       }
     })
