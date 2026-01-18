@@ -147,7 +147,117 @@ export function use3DRenderer(scene: THREE.Scene) {
 
     if (ranges.length === 0 || angleIncrement === 0) return
 
-    // 创建点云数据
+    // 获取 LaserScan 的 frame_id 和 fixedFrame
+    const scanFrame = message.header?.frame_id || 'base_scan'
+    const fixedFrame = rvizStore.globalOptions.fixedFrame || 'map'
+    
+    // 计算从 scanFrame 到 fixedFrame 的变换（重用 TF 渲染中的逻辑）
+    const transforms = tfManager.getTransforms()
+    const getScanFrameTransformToFixed = (): THREE.Matrix4 | null => {
+      if (scanFrame === fixedFrame) {
+        return new THREE.Matrix4().identity()
+      }
+
+      // 查找路径的辅助函数（从 current 向下查找 target）
+      const findPath = (current: string, target: string, visited: Set<string>, path: string[]): boolean => {
+        if (current === target) {
+          path.push(current)
+          return true
+        }
+        if (visited.has(current)) return false
+        visited.add(current)
+
+        for (const [parent, children] of transforms.entries()) {
+          if (parent === current) {
+            for (const [childName] of children.entries()) {
+              if (findPath(childName, target, visited, path)) {
+                path.push(current)
+                return true
+              }
+            }
+          }
+        }
+        return false
+      }
+
+      // 尝试从 fixedFrame 向下查找路径到 scanFrame
+      const pathDown: string[] = []
+      if (findPath(fixedFrame, scanFrame, new Set(), pathDown)) {
+        // 沿着路径累积变换（从 fixedFrame 到 scanFrame），然后取逆得到从 scanFrame 到 fixedFrame
+        let transformToScan = new THREE.Matrix4().identity()
+        for (let i = pathDown.length - 1; i > 0; i--) {
+          const parent = pathDown[i]
+          const child = pathDown[i - 1]
+          if (!parent || !child) continue
+          const parentTransforms = transforms.get(parent)
+          if (!parentTransforms) continue
+          const transform = parentTransforms.get(child)
+          if (!transform || !transform.translation || !transform.rotation) continue
+
+          const rosX = transform.translation.x
+          const rosY = transform.translation.y
+          const rosZ = transform.translation.z
+          // 右手系坐标转换：Y轴从-X变成+X
+          const threeX = rosY   // ROS Y (向右，右手系) → THREE.js +X
+          const threeY = rosZ   // ROS Z (向上) → THREE.js Y
+          const threeZ = rosX   // ROS X (向前) → THREE.js Z
+
+          const rosQuat = new THREE.Quaternion(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w)
+          const coordRotY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+          const coordRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
+          const threeQuat = new THREE.Quaternion()
+          threeQuat.multiplyQuaternions(coordRotZ, coordRotY)
+          threeQuat.multiplyQuaternions(threeQuat, rosQuat)
+
+          const localTransform = new THREE.Matrix4()
+          localTransform.compose(new THREE.Vector3(threeX, threeY, threeZ), threeQuat, new THREE.Vector3(1, 1, 1))
+          transformToScan = transformToScan.multiply(localTransform)
+        }
+        // 取逆得到从 scanFrame 到 fixedFrame 的变换
+        return transformToScan.clone().invert()
+      }
+
+      // 尝试从 scanFrame 向下查找路径到 fixedFrame（需要取逆）
+      const pathUp: string[] = []
+      if (findPath(scanFrame, fixedFrame, new Set(), pathUp)) {
+        let transformToFixed = new THREE.Matrix4().identity()
+        for (let i = pathUp.length - 1; i > 0; i--) {
+          const parent = pathUp[i]
+          const child = pathUp[i - 1]
+          if (!parent || !child) continue
+          const parentTransforms = transforms.get(parent)
+          if (!parentTransforms) continue
+          const transform = parentTransforms.get(child)
+          if (!transform || !transform.translation || !transform.rotation) continue
+
+          const rosX = transform.translation.x
+          const rosY = transform.translation.y
+          const rosZ = transform.translation.z
+          // 右手系坐标转换：Y轴从-X变成+X
+          const threeX = rosY   // ROS Y (向右，右手系) → THREE.js +X
+          const threeY = rosZ   // ROS Z (向上) → THREE.js Y
+          const threeZ = rosX   // ROS X (向前) → THREE.js Z
+
+          const rosQuat = new THREE.Quaternion(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w)
+          const coordRotY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+          const coordRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
+          const threeQuat = new THREE.Quaternion()
+          threeQuat.multiplyQuaternions(coordRotZ, coordRotY)
+          threeQuat.multiplyQuaternions(threeQuat, rosQuat)
+
+          const localTransform = new THREE.Matrix4()
+          localTransform.compose(new THREE.Vector3(threeX, threeY, threeZ), threeQuat, new THREE.Vector3(1, 1, 1))
+          transformToFixed = transformToFixed.multiply(localTransform)
+        }
+        return transformToFixed.clone().invert()
+      }
+
+      return null
+    }
+
+    const scanToFixedTransform = getScanFrameTransformToFixed()
+
+    // 创建点云数据（保持原始坐标，在 base_scan frame 下）
     const points: THREE.Vector3[] = []
     const pointIntensities: number[] = [] // 存储每个点对应的强度值
     let intensityMin = Infinity
@@ -180,10 +290,10 @@ export function use3DRenderer(scene: THREE.Scene) {
       // ROS X (向前) → THREE.js Z
       // ROS Y (向左) → THREE.js -X
       // ROS Z (向上) → THREE.js Y
-          // 右手系：Y轴绕Z轴旋转180度，从-X变成+X
-          const threeX = rosY   // ROS Y (向右，右手系) → THREE.js +X
-          const threeY = rosZ   // ROS Z (向上) → THREE.js Y
-          const threeZ = rosX   // ROS X (向前) → THREE.js Z
+      // 右手系：Y轴绕Z轴旋转180度，从-X变成+X
+      const threeX = rosY   // ROS Y (向右，右手系) → THREE.js +X
+      const threeY = rosZ   // ROS Z (向上) → THREE.js Y
+      const threeZ = rosX   // ROS X (向前) → THREE.js Z
 
       points.push(new THREE.Vector3(threeX, threeY, threeZ))
 
@@ -295,6 +405,12 @@ export function use3DRenderer(scene: THREE.Scene) {
 
       const pointsObject = new THREE.Points(geometry, material)
       pointsObject.userData.componentId = componentId
+      
+      // 应用从 scanFrame 到 fixedFrame 的变换
+      if (scanToFixedTransform) {
+        pointsObject.applyMatrix4(scanToFixedTransform)
+      }
+      
       laserscanGroup.add(pointsObject)
       // console.log('LaserScan: Added points to scene', { componentId, pointsCount: points.length, pointSize, useSizeAttenuation, visible: pointsObject.visible, position: pointsObject.position })
     } else if (style === 'Billboards') {
@@ -316,6 +432,12 @@ export function use3DRenderer(scene: THREE.Scene) {
       const spriteGroup = new THREE.Group()
       spriteGroup.userData.componentId = componentId
       sprites.forEach(sprite => spriteGroup.add(sprite))
+      
+      // 应用从 scanFrame 到 fixedFrame 的变换
+      if (scanToFixedTransform) {
+        spriteGroup.applyMatrix4(scanToFixedTransform)
+      }
+      
       laserscanGroup.add(spriteGroup)
     } else {
       // 默认使用 Points（像素大小，不启用距离衰减）
@@ -338,6 +460,12 @@ export function use3DRenderer(scene: THREE.Scene) {
 
       const pointsObject = new THREE.Points(geometry, material)
       pointsObject.userData.componentId = componentId
+      
+      // 应用从 scanFrame 到 fixedFrame 的变换
+      if (scanToFixedTransform) {
+        pointsObject.applyMatrix4(scanToFixedTransform)
+      }
+      
       laserscanGroup.add(pointsObject)
     }
   }
@@ -600,11 +728,18 @@ export function use3DRenderer(scene: THREE.Scene) {
     const enabledFrames = new Set<string>()
     
     // 获取启用的 frames
-    if (options.frames && Array.isArray(options.frames)) {
+    if (options.frames && Array.isArray(options.frames) && options.frames.length > 0) {
+      // 如果配置了 frames 列表，只渲染启用的 frames
       options.frames.forEach((frame: any) => {
         if (frame.enabled) {
           enabledFrames.add(frame.name)
         }
+      })
+    } else {
+      // 如果没有配置 frames 列表，默认渲染所有 frame
+      const allFrames = tfManager.getFrames()
+      allFrames.forEach(frameName => {
+        enabledFrames.add(frameName)
       })
     }
 
@@ -717,9 +852,17 @@ export function use3DRenderer(scene: THREE.Scene) {
           const rosX = transform.translation.x
           const rosY = transform.translation.y
           const rosZ = transform.translation.z
-          const threeX = -rosY
-          const threeY = rosZ
-          const threeZ = rosX
+          // ROS 右手坐标系 → THREE.js 坐标系转换
+          // ROS: X向前, Y向左, Z向上
+          // THREE.js: X向右, Y向上, Z向前
+          // 位置转换：ROS (X,Y,Z) → THREE.js (Z,-X,Y)
+          // 经过旋转矩阵（绕Y轴-90度，然后绕Z轴180度）后：
+          // ROS X(向前) → THREE.js Z(向前)
+          // ROS Y(向左) → THREE.js X(向右，因为旋转矩阵会翻转)
+          // ROS Z(向上) → THREE.js Y(向上)
+          const threeX = -rosY   // ROS Y (向左) → THREE.js -X，经过旋转矩阵后变为 +X
+          const threeY = rosZ    // ROS Z (向上) → THREE.js Y
+          const threeZ = rosX    // ROS X (向前) → THREE.js Z
 
           const rosQx = transform.rotation.x
           const rosQy = transform.rotation.y
@@ -727,7 +870,9 @@ export function use3DRenderer(scene: THREE.Scene) {
           const rosQw = transform.rotation.w
 
           const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
-          // 右手系坐标转换：先绕Y轴旋转-90度，然后绕Z轴旋转180度（Y轴从-X变成+X）
+          // 坐标系统转换旋转矩阵：
+          // 1. 绕Y轴旋转-90度：将ROS的XZ平面旋转到THREE.js的XZ平面
+          // 2. 绕Z轴旋转180度：将ROS的Y轴（向左）翻转到THREE.js的X轴（向右）
           const coordRotY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
           const coordRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI) // 绕Z轴旋转180度
           const threeQuat = new THREE.Quaternion()
@@ -765,9 +910,17 @@ export function use3DRenderer(scene: THREE.Scene) {
           const rosX = transform.translation.x
           const rosY = transform.translation.y
           const rosZ = transform.translation.z
-          const threeX = -rosY
-          const threeY = rosZ
-          const threeZ = rosX
+          // ROS 右手坐标系 → THREE.js 坐标系转换
+          // ROS: X向前, Y向左, Z向上
+          // THREE.js: X向右, Y向上, Z向前
+          // 位置转换：ROS (X,Y,Z) → THREE.js (Z,-X,Y)
+          // 经过旋转矩阵（绕Y轴-90度，然后绕Z轴180度）后：
+          // ROS X(向前) → THREE.js Z(向前)
+          // ROS Y(向左) → THREE.js X(向右，因为旋转矩阵会翻转)
+          // ROS Z(向上) → THREE.js Y(向上)
+          const threeX = -rosY   // ROS Y (向左) → THREE.js -X，经过旋转矩阵后变为 +X
+          const threeY = rosZ    // ROS Z (向上) → THREE.js Y
+          const threeZ = rosX    // ROS X (向前) → THREE.js Z
 
           const rosQx = transform.rotation.x
           const rosQy = transform.rotation.y
@@ -775,7 +928,9 @@ export function use3DRenderer(scene: THREE.Scene) {
           const rosQw = transform.rotation.w
 
           const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
-          // 右手系坐标转换：先绕Y轴旋转-90度，然后绕Z轴旋转180度（Y轴从-X变成+X）
+          // 坐标系统转换旋转矩阵：
+          // 1. 绕Y轴旋转-90度：将ROS的XZ平面旋转到THREE.js的XZ平面
+          // 2. 绕Z轴旋转180度：将ROS的Y轴（向左）翻转到THREE.js的X轴（向右）
           const coordRotY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
           const coordRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI) // 绕Z轴旋转180度
           const threeQuat = new THREE.Quaternion()
@@ -819,9 +974,10 @@ export function use3DRenderer(scene: THREE.Scene) {
             const rosX = transform.translation.x
             const rosY = transform.translation.y
             const rosZ = transform.translation.z
-            const threeX = -rosY
-            const threeY = rosZ
-            const threeZ = rosX
+            // 右手系坐标转换：Y轴从-X变成+X
+            const threeX = rosY   // ROS Y (向右，右手系) → THREE.js +X
+            const threeY = rosZ   // ROS Z (向上) → THREE.js Y
+            const threeZ = rosX   // ROS X (向前) → THREE.js Z
             
             const rosQx = transform.rotation.x
             const rosQy = transform.rotation.y
@@ -829,9 +985,12 @@ export function use3DRenderer(scene: THREE.Scene) {
             const rosQw = transform.rotation.w
             
             const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
-            const coordRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+            // 右手系坐标转换：先绕Y轴旋转-90度，然后绕Z轴旋转180度（Y轴从-X变成+X）
+            const coordRotY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+            const coordRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
             const threeQuat = new THREE.Quaternion()
-            threeQuat.multiplyQuaternions(coordRot, rosQuat)
+            threeQuat.multiplyQuaternions(coordRotZ, coordRotY)
+            threeQuat.multiplyQuaternions(threeQuat, rosQuat)
             
             localTransform.compose(
               new THREE.Vector3(threeX, threeY, threeZ),
@@ -876,9 +1035,10 @@ export function use3DRenderer(scene: THREE.Scene) {
               const rosX = transform.translation.x
               const rosY = transform.translation.y
               const rosZ = transform.translation.z
-              const threeX = -rosY
-              const threeY = rosZ
-              const threeZ = rosX
+              // 右手系坐标转换：Y轴从-X变成+X
+              const threeX = rosY   // ROS Y (向右，右手系) → THREE.js +X
+              const threeY = rosZ   // ROS Z (向上) → THREE.js Y
+              const threeZ = rosX   // ROS X (向前) → THREE.js Z
               
               const rosQx = transform.rotation.x
               const rosQy = transform.rotation.y
@@ -886,9 +1046,12 @@ export function use3DRenderer(scene: THREE.Scene) {
               const rosQw = transform.rotation.w
               
               const rosQuat = new THREE.Quaternion(rosQx, rosQy, rosQz, rosQw)
-              const coordRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+              // 右手系坐标转换：先绕Y轴旋转-90度，然后绕Z轴旋转180度（Y轴从-X变成+X）
+              const coordRotY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+              const coordRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
               const threeQuat = new THREE.Quaternion()
-              threeQuat.multiplyQuaternions(coordRot, rosQuat)
+              threeQuat.multiplyQuaternions(coordRotZ, coordRotY)
+              threeQuat.multiplyQuaternions(threeQuat, rosQuat)
               
               localTransform.compose(
                 new THREE.Vector3(threeX, threeY, threeZ),
@@ -947,7 +1110,7 @@ export function use3DRenderer(scene: THREE.Scene) {
           const xAxis = new THREE.Line(xGeometry, xMaterial)
           frameGroup.add(xAxis)
 
-          // Y轴（绿色）- ROS Y 向右（右手系），对应 THREE.js +X 方向（绕Z轴旋转180度）
+          // Y轴（绿色）- ROS Y 向左（标准ROS右手系），经过旋转矩阵后对应 THREE.js +X 方向
           const yGeometry = new THREE.BufferGeometry().setFromPoints([
             new THREE.Vector3(0, 0, 0),
             new THREE.Vector3(axisLength, 0, 0)
@@ -1011,12 +1174,6 @@ export function use3DRenderer(scene: THREE.Scene) {
         })
       }
     }
-
-    // 渲染所有根节点
-    tfTree.forEach(rootNode => {
-      renderTFFrame(rootNode)
-    })
-
 
     // 渲染所有根节点
     tfTree.forEach(rootNode => {
