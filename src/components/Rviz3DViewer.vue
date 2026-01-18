@@ -21,7 +21,6 @@
       :show-axes="rvizStore.sceneState.showAxes"
       :show-robot="rvizStore.sceneState.showRobot"
       :show-map="rvizStore.sceneState.showMap"
-      :show-path="rvizStore.sceneState.showPath"
       :show-laser="rvizStore.sceneState.showLaser"
       :background-color="rvizStore.sceneState.backgroundColor"
       :fps="rvizStore.sceneState.fps"
@@ -39,7 +38,6 @@
       @update:camera-mode="handleCameraModeUpdate"
       @update:show-robot="handleShowRobotUpdate"
       @update:show-map="handleShowMapUpdate"
-      @update:show-path="handleShowPathUpdate"
       @update:show-laser="handleShowLaserUpdate"
       @update:background-color="handleBackgroundColorUpdate"
       @take-screenshot="takeScreenshot"
@@ -120,7 +118,6 @@ let gridHelper: THREE.GridHelper
 let axesHelper: THREE.Group
 let robotGroup: THREE.Group
 let mapMesh: THREE.Mesh
-let pathLine: THREE.Line
 
 // 使用 3D 渲染器 composable（在场景初始化后设置）
 let renderer3D: ReturnType<typeof use3DRenderer> | null = null
@@ -179,15 +176,11 @@ const initScene = () => {
   // 创建地图
   createMap()
 
-  // 创建路径
-  createPath()
-
   // 初始化 3D 渲染器
   renderer3D = use3DRenderer(scene)
   // 将创建的网格对象传递给渲染器
   if (renderer3D) {
     renderer3D.renderObjects.value.mapMesh = mapMesh
-    renderer3D.renderObjects.value.pathLine = pathLine
   }
 
   // 添加灯光
@@ -463,21 +456,6 @@ const createMap = () => {
   scene.add(mapMesh)
 }
 
-const createPath = () => {
-  // 创建路径点
-  const points = [
-    new THREE.Vector3(-5, 0.1, -5),
-    new THREE.Vector3(-3, 0.1, -3),
-    new THREE.Vector3(0, 0.1, 0),
-    new THREE.Vector3(3, 0.1, 3),
-    new THREE.Vector3(5, 0.1, 5)
-  ]
-
-  const pathGeometry = new THREE.BufferGeometry().setFromPoints(points)
-  const pathMaterial = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 })
-  pathLine = new THREE.Line(pathGeometry, pathMaterial)
-  scene.add(pathLine)
-}
 
 const resetCamera = () => {
   camera.position.set(10, 10, 10)
@@ -656,9 +634,6 @@ const handleShowMapUpdate = (value: boolean) => {
   rvizStore.sceneState.showMap = value
 }
 
-const handleShowPathUpdate = (value: boolean) => {
-  rvizStore.sceneState.showPath = value
-}
 
 const handleShowLaserUpdate = (value: boolean) => {
   rvizStore.sceneState.showLaser = value
@@ -689,7 +664,6 @@ const exportScene = () => {
     objects: {
       showRobot: rvizStore.sceneState.showRobot,
       showMap: rvizStore.sceneState.showMap,
-      showPath: rvizStore.sceneState.showPath,
       showLaser: rvizStore.sceneState.showLaser
     },
     display: {
@@ -896,11 +870,6 @@ watch(() => rvizStore.sceneState.showMap, (val: boolean) => {
   }
 })
 
-watch(() => rvizStore.sceneState.showPath, (val: boolean) => {
-  if (pathLine) {
-    pathLine.visible = val
-  }
-})
 
 watch(() => rvizStore.sceneState.backgroundColor, (val: string) => {
   if (scene) {
@@ -977,12 +946,6 @@ const updateComponentVisibility = (componentId: string, componentType: string) =
         mapMesh.visible = visible
       }
       rvizStore.sceneState.showMap = visible
-      break
-    case 'path':
-      if (pathLine) {
-        pathLine.visible = visible
-      }
-      rvizStore.sceneState.showPath = visible
       break
     // 其他组件类型的可视化可以在这里添加
     default:
@@ -1068,9 +1031,6 @@ watch(() => rvizStore.robotConnection.connected, (connected) => {
     // 隐藏所有依赖数据的组件
     if (mapMesh) {
       mapMesh.visible = false
-    }
-    if (pathLine) {
-      pathLine.visible = false
     }
   }
 })

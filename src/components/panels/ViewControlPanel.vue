@@ -35,7 +35,6 @@
         <div class="checkbox-group">
           <el-checkbox v-model="localShowRobot" @change="$emit('update:showRobot', $event)">机器人模型</el-checkbox>
           <el-checkbox v-model="localShowMap" @change="$emit('update:showMap', $event)">地图</el-checkbox>
-          <el-checkbox v-model="localShowPath" @change="$emit('update:showPath', $event)">路径</el-checkbox>
           <el-checkbox v-model="localShowLaser" @change="$emit('update:showLaser', $event)">激光扫描</el-checkbox>
         </div>
       </div>
@@ -81,7 +80,6 @@ interface Props {
   showAxes: boolean
   showRobot: boolean
   showMap: boolean
-  showPath: boolean
   showLaser: boolean
   backgroundColor: string
   isFullscreen: boolean
@@ -93,7 +91,6 @@ const props = defineProps<Props>()
 const localCameraMode = ref(props.cameraMode)
 const localShowRobot = ref(props.showRobot)
 const localShowMap = ref(props.showMap)
-const localShowPath = ref(props.showPath)
 const localShowLaser = ref(props.showLaser)
 const localBackgroundColor = ref(props.backgroundColor)
 
@@ -101,7 +98,6 @@ const localBackgroundColor = ref(props.backgroundColor)
 watch(() => props.cameraMode, (newVal) => { localCameraMode.value = newVal })
 watch(() => props.showRobot, (newVal) => { localShowRobot.value = newVal })
 watch(() => props.showMap, (newVal) => { localShowMap.value = newVal })
-watch(() => props.showPath, (newVal) => { localShowPath.value = newVal })
 watch(() => props.showLaser, (newVal) => { localShowLaser.value = newVal })
 watch(() => props.backgroundColor, (newVal) => { localBackgroundColor.value = newVal })
 
@@ -112,7 +108,6 @@ defineEmits<{
   'update:cameraMode': [value: string]
   'update:showRobot': [value: boolean]
   'update:showMap': [value: boolean]
-  'update:showPath': [value: boolean]
   'update:showLaser': [value: boolean]
   'update:backgroundColor': [value: string]
   toggleFullscreen: []

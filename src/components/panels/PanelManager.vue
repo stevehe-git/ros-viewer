@@ -33,7 +33,6 @@
               :show-axes="rvizStore.sceneState.showAxes"
               :show-robot="rvizStore.sceneState.showRobot"
               :show-map="rvizStore.sceneState.showMap"
-              :show-path="rvizStore.sceneState.showPath"
               :show-laser="rvizStore.sceneState.showLaser"
               :background-color="rvizStore.sceneState.backgroundColor"
               :is-fullscreen="props.isFullscreen"
@@ -43,7 +42,6 @@
               @update:camera-mode="$emit('update:cameraMode', $event)"
               @update:show-robot="$emit('update:showRobot', $event)"
               @update:show-map="$emit('update:showMap', $event)"
-              @update:show-path="$emit('update:showPath', $event)"
               @update:show-laser="$emit('update:showLaser', $event)"
               @update:background-color="$emit('update:backgroundColor', $event)"
               @toggle-fullscreen="$emit('toggleFullscreen')"
@@ -129,7 +127,6 @@
         :show-axes="rvizStore.sceneState.showAxes"
         :show-robot="rvizStore.sceneState.showRobot"
         :show-map="rvizStore.sceneState.showMap"
-        :show-path="rvizStore.sceneState.showPath"
         :show-laser="rvizStore.sceneState.showLaser"
         :background-color="rvizStore.sceneState.backgroundColor"
         :is-fullscreen="props.isFullscreen"
@@ -139,7 +136,6 @@
         @update:camera-mode="$emit('update:cameraMode', $event)"
         @update:show-robot="$emit('update:showRobot', $event)"
         @update:show-map="$emit('update:showMap', $event)"
-        @update:show-path="$emit('update:showPath', $event)"
         @update:show-laser="$emit('update:showLaser', $event)"
         @update:background-color="$emit('update:backgroundColor', $event)"
         @toggle-fullscreen="$emit('toggleFullscreen')"
@@ -638,7 +634,6 @@ const emit = defineEmits<{
   'update:cameraMode': [value: string]
   'update:showRobot': [value: boolean]
   'update:showMap': [value: boolean]
-  'update:showPath': [value: boolean]
   'update:showLaser': [value: boolean]
   'update:backgroundColor': [value: string]
   takeScreenshot: []
