@@ -65,10 +65,9 @@ export function use3DRenderer(scene: THREE.Scene) {
         side: THREE.DoubleSide
       })
       renderObjects.value.mapMesh = new THREE.Mesh(mapGeometry, mapMaterial)
-      // ROS 地图通常在 XY 平面（俯视图），需要转换到 THREE.js 坐标系
-      // ROS XY 平面：X向前（THREE.js Z），Y向左（THREE.js -X），Z向上（THREE.js Y）
-      // 需要将 THREE.js 的 XY 平面旋转，使网格在 XZ 平面（THREE.js），然后绕 Z 轴旋转 90 度
-      renderObjects.value.mapMesh.rotation.set(Math.PI / 2, 0, Math.PI / 2)
+      // ROS 地图在 XY 平面（水平面，Z=0），转换后应该在 THREE.js 的 XZ 平面（Y=0）
+      // 绕X轴旋转-90度，使XY平面变为XZ平面
+      renderObjects.value.mapMesh.rotation.set(-Math.PI / 2, 0, 0)
       renderObjects.value.mapMesh.position.set(0, 0, 0)
       renderObjects.value.mapMesh.receiveShadow = true
       scene.add(renderObjects.value.mapMesh)

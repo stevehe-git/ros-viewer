@@ -216,7 +216,7 @@ const getStatusText = (): string => {
     }
     return 'Waiting for data...'
   }
-
+  
   // 其他组件使用 useTopicSubscription 的状态
   if (subscriptionStatus.error) {
     return 'Error'

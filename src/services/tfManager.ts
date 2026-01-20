@@ -1,9 +1,17 @@
 /**
- * TF 坐标变换管理器
- * 监听 tf2-ros 发布的坐标变换，维护可用的坐标系列表
+ * TF 坐标变换管理器（重构版）
+ * 
+ * 核心设计原则（参考RViz）：
+ * 1. 统一处理静态和动态TF数据
+ * 2. 维护完整的TF树结构
+ * 3. 提供高效的变换查询接口
+ * 4. 区分静态和动态变换，静态变换永不过期
  */
+
 import * as ROSLIB from 'roslib'
 import { ref, toRaw } from 'vue'
+import * as THREE from 'three'
+import { convertROSTranslationToThree, convertROSRotationToThree } from './coordinateConverter'
 
 export interface TransformFrame {
   name: string
@@ -11,7 +19,7 @@ export interface TransformFrame {
   timestamp?: number
   lastUpdateTime?: number
   isValid?: boolean
-  // Transform 数据
+  isStatic?: boolean  // 是否为静态变换
   translation?: { x: number; y: number; z: number }
   rotation?: { x: number; y: number; z: number; w: number }
 }
@@ -22,7 +30,7 @@ export interface TFTreeNode {
   children: TFTreeNode[]
   lastUpdateTime: number
   isValid: boolean
-  enabled?: boolean
+  isStatic?: boolean
 }
 
 class TFManager {
@@ -36,8 +44,10 @@ class TFManager {
   // 坐标系列表（用于下拉框）
   public frames = ref<string[]>([])
   
-  // TF 变换数据（frame_id -> child_frame_id -> TransformFrame）
-  private transforms = ref<Map<string, Map<string, TransformFrame>>>(new Map())
+  // TF 变换数据（parent_frame -> child_frame -> TransformFrame）
+  // 区分静态和动态：静态变换存储在单独的Map中
+  private dynamicTransforms = ref<Map<string, Map<string, TransformFrame>>>(new Map())
+  private staticTransforms = ref<Map<string, Map<string, TransformFrame>>>(new Map())
   
   // TF 树结构（响应式）
   public tfTree = ref<TFTreeNode[]>([])
@@ -45,10 +55,7 @@ class TFManager {
   // 数据更新触发器（用于响应式追踪）
   private dataUpdateTrigger = ref(0)
   
-  // 默认坐标系（如果没有 TF 数据）
-  private defaultFrames = ['map', 'odom', 'base_link', 'base_footprint']
-  
-  // Frame 超时时间（秒）
+  // Frame 超时时间（秒）- 仅对动态变换有效
   private frameTimeout = 15
   
   // 订阅状态（响应式）
@@ -64,27 +71,61 @@ class TFManager {
     lastMessageTime: null
   })
   
+  private dataUpdateThrottleTimer: number | null = null
+  private pendingDataUpdate = false
+
+  /**
+   * 获取所有变换数据（合并静态和动态）
+   */
+  getTransforms(): Map<string, Map<string, TransformFrame>> {
+    const merged = new Map<string, Map<string, TransformFrame>>()
+    
+    // 先添加静态变换（优先级更高）
+    this.staticTransforms.value.forEach((children, parent) => {
+      if (!merged.has(parent)) {
+        merged.set(parent, new Map())
+      }
+      const parentMap = merged.get(parent)!
+      children.forEach((transform, child) => {
+        parentMap.set(child, transform)
+      })
+    })
+    
+    // 再添加动态变换（覆盖静态变换，如果有的话）
+    this.dynamicTransforms.value.forEach((children, parent) => {
+      if (!merged.has(parent)) {
+        merged.set(parent, new Map())
+      }
+      const parentMap = merged.get(parent)!
+      children.forEach((transform, child) => {
+        parentMap.set(child, transform)
+      })
+    })
+    
+    return merged
+  }
+
   /**
    * 获取订阅状态
    */
   getSubscriptionStatus() {
     return this.subscriptionStatus.value
   }
-  
+
   /**
    * 获取响应式的订阅状态
    */
   getSubscriptionStatusRef() {
     return this.subscriptionStatus
   }
-  
+
   /**
-   * 获取数据更新触发器（用于响应式追踪）
+   * 获取数据更新触发器
    */
   getDataUpdateTrigger() {
     return this.dataUpdateTrigger
   }
-  
+
   /**
    * 触发数据更新（节流）
    */
@@ -102,48 +143,35 @@ class TFManager {
       if (this.pendingDataUpdate) {
         this.triggerDataUpdateThrottled()
       }
-    }, 100) // 每100ms最多更新一次
+    }, 100)
   }
-  
-  private dataUpdateThrottleTimer: number | null = null
-  private pendingDataUpdate = false
 
   /**
    * 设置 ROS 实例
    */
   setROSInstance(ros: ROSLIB.Ros | null) {
-    // 先取消之前的订阅
     this.unsubscribe()
     
-    // 使用 toRaw 获取原始对象，避免代理对象访问私有成员的问题
     const rawRos = ros ? toRaw(ros) : null
     this.rosInstance = rawRos
     
-    console.log('TFManager: setROSInstance', ros)
     if (rawRos) {
-      // 安全地检查连接状态
       let isConnected = false
       try {
         isConnected = rawRos.isConnected === true
-        console.log('TFManager: ros.isConnected', isConnected)
       } catch (error) {
-        // 如果访问 isConnected 失败，假设已连接（因为我们已经成功连接了）
         console.warn('TFManager: Could not check ROS connection status, assuming connected', error)
         isConnected = true
       }
       
-      // 检查连接状态，如果已连接则立即订阅，否则等待连接事件
       if (isConnected) {
-        console.log('TFManager: ROS is connected, subscribing to TF topics')
         this.subscribe()
       } else {
-        // 等待连接事件
         rawRos.on('connection', () => {
           this.subscribe()
         })
       }
     } else {
-      // 清理资源
       this.availableFrames.value.clear()
       this.updateFramesList()
     }
@@ -164,7 +192,6 @@ class TFManager {
     }
 
     try {
-      // 更新订阅状态
       this.subscriptionStatus.value = {
         subscribed: true,
         hasData: false,
@@ -180,10 +207,8 @@ class TFManager {
       })
 
       this.tfTopic.subscribe((message: any) => {
-        // console.log('TFManager: Received /tf message', message)
         const now = Date.now()
         
-        // 更新订阅状态
         this.subscriptionStatus.value = {
           subscribed: true,
           hasData: true,
@@ -193,52 +218,7 @@ class TFManager {
         
         if (message && message.transforms && Array.isArray(message.transforms)) {
           message.transforms.forEach((transform: any) => {
-            if (transform.header && transform.header.frame_id) {
-              const frameId = transform.header.frame_id
-              const childFrameId = transform.child_frame_id
-              
-              // 添加父坐标系和子坐标系
-              this.availableFrames.value.add(frameId)
-              if (childFrameId) {
-                this.availableFrames.value.add(childFrameId)
-              }
-              
-              // 存储变换数据
-              if (!this.transforms.value.has(frameId)) {
-                this.transforms.value.set(frameId, new Map())
-              }
-              const frameTransforms = this.transforms.value.get(frameId)!
-              
-              // 提取变换信息
-              const transformData: TransformFrame = {
-                name: childFrameId,
-                parent: frameId,
-                timestamp: transform.header.stamp?.secs ? transform.header.stamp.secs * 1000 + (transform.header.stamp.nsecs || 0) / 1000000 : now,
-                lastUpdateTime: now,
-                isValid: true,
-                // 提取 translation 和 rotation
-                translation: transform.transform?.translation ? {
-                  x: transform.transform.translation.x || 0,
-                  y: transform.transform.translation.y || 0,
-                  z: transform.transform.translation.z || 0
-                } : undefined,
-                rotation: transform.transform?.rotation ? {
-                  x: transform.transform.rotation.x || 0,
-                  y: transform.transform.rotation.y || 0,
-                  z: transform.transform.rotation.z || 0,
-                  w: transform.transform.rotation.w !== undefined ? transform.transform.rotation.w : 1
-                } : undefined
-              }
-              
-              frameTransforms.set(childFrameId, transformData)
-              
-              // 更新 frames 列表和树结构
-              this.updateFramesList()
-              this.updateTFTree()
-              
-              // 触发数据更新通知（节流）
-              this.triggerDataUpdateThrottled()
-            }
+            this.processTransform(transform, false, now) // false = 动态变换
           })
         }
       })
@@ -251,10 +231,8 @@ class TFManager {
       })
 
       this.tfStaticTopic.subscribe((message: any) => {
-        // console.log('TFManager: Received /tf_static message', message)
         const now = Date.now()
         
-        // 更新订阅状态（静态 TF 也计入消息计数）
         this.subscriptionStatus.value = {
           subscribed: true,
           hasData: true,
@@ -264,51 +242,7 @@ class TFManager {
         
         if (message && message.transforms && Array.isArray(message.transforms)) {
           message.transforms.forEach((transform: any) => {
-            if (transform.header && transform.header.frame_id) {
-              const frameId = transform.header.frame_id
-              const childFrameId = transform.child_frame_id
-              
-              // 添加父坐标系和子坐标系
-              this.availableFrames.value.add(frameId)
-              if (childFrameId) {
-                this.availableFrames.value.add(childFrameId)
-              }
-              
-              // 存储变换数据（静态变换不会过期）
-              if (!this.transforms.value.has(frameId)) {
-                this.transforms.value.set(frameId, new Map())
-              }
-              const frameTransforms = this.transforms.value.get(frameId)!
-              
-              const transformData: TransformFrame = {
-                name: childFrameId,
-                parent: frameId,
-                timestamp: transform.header.stamp?.secs ? transform.header.stamp.secs * 1000 + (transform.header.stamp.nsecs || 0) / 1000000 : now,
-                lastUpdateTime: now,
-                isValid: true,
-                // 提取 translation 和 rotation
-                translation: transform.transform?.translation ? {
-                  x: transform.transform.translation.x || 0,
-                  y: transform.transform.translation.y || 0,
-                  z: transform.transform.translation.z || 0
-                } : undefined,
-                rotation: transform.transform?.rotation ? {
-                  x: transform.transform.rotation.x || 0,
-                  y: transform.transform.rotation.y || 0,
-                  z: transform.transform.rotation.z || 0,
-                  w: transform.transform.rotation.w !== undefined ? transform.transform.rotation.w : 1
-                } : undefined
-              }
-              
-              frameTransforms.set(childFrameId, transformData)
-              
-              // 更新 frames 列表和树结构
-              this.updateFramesList()
-              this.updateTFTree()
-              
-              // 触发数据更新通知（节流）
-              this.triggerDataUpdateThrottled()
-            }
+            this.processTransform(transform, true, now) // true = 静态变换
           })
         }
       })
@@ -316,7 +250,6 @@ class TFManager {
       console.log('TFManager: Subscribed to /tf and /tf_static topics')
     } catch (error) {
       console.error('TFManager: Error subscribing to TF topics:', error)
-      // 更新订阅状态为错误
       this.subscriptionStatus.value = {
         subscribed: false,
         hasData: false,
@@ -327,10 +260,63 @@ class TFManager {
   }
 
   /**
+   * 处理单个变换数据
+   */
+  private processTransform(transform: any, isStatic: boolean, now: number) {
+    if (!transform.header || !transform.header.frame_id) return
+
+    const frameId = transform.header.frame_id
+    const childFrameId = transform.child_frame_id
+    
+    if (!childFrameId) return
+
+    // 添加到可用坐标系列表
+    this.availableFrames.value.add(frameId)
+    this.availableFrames.value.add(childFrameId)
+    
+    // 选择存储位置（静态或动态）
+    const targetMap = isStatic ? this.staticTransforms : this.dynamicTransforms
+    
+    // 存储变换数据
+    if (!targetMap.value.has(frameId)) {
+      targetMap.value.set(frameId, new Map())
+    }
+    const frameTransforms = targetMap.value.get(frameId)!
+    
+    const transformData: TransformFrame = {
+      name: childFrameId,
+      parent: frameId,
+      timestamp: transform.header.stamp?.secs ? transform.header.stamp.secs * 1000 + (transform.header.stamp.nsecs || 0) / 1000000 : now,
+      lastUpdateTime: now,
+      isValid: true,
+      isStatic: isStatic,
+      translation: transform.transform?.translation ? {
+        x: transform.transform.translation.x || 0,
+        y: transform.transform.translation.y || 0,
+        z: transform.transform.translation.z || 0
+      } : undefined,
+      rotation: transform.transform?.rotation ? {
+        x: transform.transform.rotation.x || 0,
+        y: transform.transform.rotation.y || 0,
+        z: transform.transform.rotation.z || 0,
+        w: transform.transform.rotation.w !== undefined ? transform.transform.rotation.w : 1
+      } : undefined
+    }
+    
+    frameTransforms.set(childFrameId, transformData)
+    
+    // 更新 frames 列表和树结构
+    this.updateFramesList()
+    this.updateTFTree()
+    
+    // 触发数据更新通知（节流）
+    this.triggerDataUpdateThrottled()
+  }
+
+  /**
    * 取消订阅
    */
   private unsubscribe() {
-    // 更新订阅状态
     this.subscriptionStatus.value = {
       subscribed: false,
       hasData: false,
@@ -361,16 +347,8 @@ class TFManager {
    * 更新坐标系列表
    */
   private updateFramesList() {
-    // 合并默认坐标系和从 TF 获取的坐标系
     const allFrames = new Set<string>()
-    
-    // 添加默认坐标系
-    this.defaultFrames.forEach(frame => allFrames.add(frame))
-    
-    // 添加从 TF 获取的坐标系
     this.availableFrames.value.forEach(frame => allFrames.add(frame))
-    
-    // 转换为排序后的数组
     this.frames.value = Array.from(allFrames).sort()
   }
 
@@ -380,6 +358,9 @@ class TFManager {
   private updateTFTree() {
     const now = Date.now()
     const timeoutMs = this.frameTimeout * 1000
+    
+    // 合并静态和动态变换
+    const allTransforms = this.getTransforms()
     
     // 构建节点映射
     const nodeMap = new Map<string, TFTreeNode>()
@@ -392,16 +373,18 @@ class TFManager {
           parent: null,
           children: [],
           lastUpdateTime: 0,
-          isValid: false
+          isValid: false,
+          isStatic: false
         })
       }
     })
     
     // 建立父子关系并更新状态
-    this.transforms.value.forEach((childMap, parentName) => {
+    allTransforms.forEach((childMap, parentName) => {
       childMap.forEach((transform, childName) => {
+        // 静态变换永不过期，动态变换检查超时
         const age = now - transform.lastUpdateTime!
-        const isValid = age < timeoutMs
+        const isValid = transform.isStatic || age < timeoutMs
         
         // 更新子节点
         if (nodeMap.has(childName)) {
@@ -409,14 +392,15 @@ class TFManager {
           childNode.parent = parentName
           childNode.lastUpdateTime = transform.lastUpdateTime || now
           childNode.isValid = isValid
+          childNode.isStatic = transform.isStatic
         } else {
-          // 创建新节点
           nodeMap.set(childName, {
             name: childName,
             parent: parentName,
             children: [],
             lastUpdateTime: transform.lastUpdateTime || now,
-            isValid: isValid
+            isValid: isValid,
+            isStatic: transform.isStatic
           })
         }
         
@@ -443,7 +427,6 @@ class TFManager {
       rootNodes.push(nodeMap.get('map')!)
     }
     
-    // 排序根节点
     rootNodes.sort((a, b) => a.name.localeCompare(b.name))
     
     this.tfTree.value = rootNodes
@@ -461,13 +444,6 @@ class TFManager {
    */
   getTFTreeRef() {
     return this.tfTree
-  }
-
-  /**
-   * 获取所有变换数据
-   */
-  getTransforms(): Map<string, Map<string, TransformFrame>> {
-    return this.transforms.value
   }
 
   /**
@@ -489,7 +465,8 @@ class TFManager {
    * 获取 frame 的父节点
    */
   getFrameParent(frameName: string): string | null {
-    for (const [parent, children] of this.transforms.value.entries()) {
+    const transforms = this.getTransforms()
+    for (const [parent, children] of transforms.entries()) {
       if (children.has(frameName)) {
         return parent
       }
@@ -498,39 +475,142 @@ class TFManager {
   }
 
   /**
-   * 获取从 sourceFrame 到 targetFrame 的变换路径
+   * 查找从 sourceFrame 到 targetFrame 的路径（BFS）
    */
   getTransformPath(sourceFrame: string, targetFrame: string): string[] | null {
-    const findPathUp = (current: string, target: string, path: string[]): boolean => {
-      if (current === target) {
-        path.push(current)
-        return true
+    if (sourceFrame === targetFrame) {
+      return [sourceFrame]
+    }
+
+    const transforms = this.getTransforms()
+    const visited = new Set<string>()
+    const queue: { frame: string; path: string[] }[] = [{ frame: sourceFrame, path: [sourceFrame] }]
+
+    while (queue.length > 0) {
+      const { frame: currentFrame, path: currentPath } = queue.shift()!
+
+      if (currentFrame === targetFrame) {
+        return currentPath
       }
 
-      // 查找 current 的父节点
-      for (const [parent, children] of this.transforms.value.entries()) {
-        if (children.has(current)) {
-          if (findPathUp(parent, target, path)) {
-            path.push(current)
-            return true
+      if (visited.has(currentFrame)) {
+        continue
+      }
+      visited.add(currentFrame)
+
+      // 查找子节点（向下）
+      const children = transforms.get(currentFrame)
+      if (children) {
+        for (const childName of children.keys()) {
+          if (!visited.has(childName)) {
+            queue.push({ frame: childName, path: [...currentPath, childName] })
           }
         }
       }
-      return false
-    }
 
-    const path: string[] = []
-    if (findPathUp(sourceFrame, targetFrame, path)) {
-      return path
+      // 查找父节点（向上）
+      for (const [parentName, parentChildren] of transforms.entries()) {
+        if (parentChildren.has(currentFrame) && !visited.has(parentName)) {
+          queue.push({ frame: parentName, path: [...currentPath, parentName] })
+        }
+      }
     }
     return null
+  }
+
+  /**
+   * 计算从 sourceFrame 到 targetFrame 的变换矩阵
+   * 这是核心方法，用于计算任意两个frame之间的变换
+   */
+  getTransformMatrix(sourceFrame: string, targetFrame: string): THREE.Matrix4 | null {
+    if (sourceFrame === targetFrame) {
+      return new THREE.Matrix4().identity()
+    }
+
+    const path = this.getTransformPath(sourceFrame, targetFrame)
+    if (!path) {
+      return null
+    }
+
+    const transforms = this.getTransforms()
+    let resultMatrix = new THREE.Matrix4().identity()
+
+    // 沿着路径累积变换
+    for (let i = 0; i < path.length - 1; i++) {
+      const from = path[i]
+      const to = path[i + 1]
+
+      if (!from || !to) {
+        console.warn(`TFManager: Invalid path segment at index ${i}`)
+        continue
+      }
+
+      // 尝试查找从from到to的变换（正向）
+      let transform: TransformFrame | null = null
+      const fromTransforms = transforms.get(from)
+      if (fromTransforms && fromTransforms.has(to)) {
+        transform = fromTransforms.get(to) || null
+      }
+
+      // 如果没找到正向变换，尝试反向变换（从to到from，然后取逆）
+      if (!transform) {
+        const toTransforms = transforms.get(to)
+        if (toTransforms && toTransforms.has(from)) {
+          const inverseTransform = toTransforms.get(from)
+          if (inverseTransform && inverseTransform.translation && inverseTransform.rotation) {
+            // 计算逆变换矩阵
+            const matrix = new THREE.Matrix4()
+            const position = convertROSTranslationToThree(inverseTransform.translation)
+            const quaternion = convertROSRotationToThree(inverseTransform.rotation)
+            matrix.compose(position, quaternion, new THREE.Vector3(1, 1, 1))
+
+            const inverseMatrix = matrix.clone().invert()
+            const invPosition = new THREE.Vector3()
+            const invQuaternion = new THREE.Quaternion()
+            const invScale = new THREE.Vector3()
+            inverseMatrix.decompose(invPosition, invQuaternion, invScale)
+
+            transform = {
+              name: from,
+              parent: to,
+              translation: {
+                x: invPosition.x,
+                y: invPosition.y,
+                z: invPosition.z
+              },
+              rotation: {
+                x: invQuaternion.x,
+                y: invQuaternion.y,
+                z: invQuaternion.z,
+                w: invQuaternion.w
+              }
+            }
+          }
+        }
+      }
+
+      if (transform && transform.translation && transform.rotation) {
+        const position = convertROSTranslationToThree(transform.translation)
+        const quaternion = convertROSRotationToThree(transform.rotation)
+        const localMatrix = new THREE.Matrix4()
+        localMatrix.compose(position, quaternion, new THREE.Vector3(1, 1, 1))
+        
+        // 累积变换：resultMatrix = localMatrix * resultMatrix
+        resultMatrix = localMatrix.multiply(resultMatrix)
+      } else {
+        console.warn(`TFManager: Could not find transform from ${from} to ${to}`)
+        return null
+      }
+    }
+
+    return resultMatrix
   }
 
   /**
    * 获取可用的坐标系列表
    */
   getFrames(): string[] {
-    return this.frames.value.length > 0 ? this.frames.value : this.defaultFrames
+    return this.frames.value.length > 0 ? this.frames.value : ['map', 'odom', 'base_link', 'base_footprint']
   }
 
   /**
@@ -541,7 +621,7 @@ class TFManager {
   }
 
   /**
-   * 获取 frame 的详细信息（包括 parent, position, orientation）
+   * 获取 frame 的详细信息
    */
   getFrameInfo(frameName: string, fixedFrame: string = 'map'): {
     parent: string | null
@@ -550,7 +630,7 @@ class TFManager {
     relativePosition: { x: number; y: number; z: number } | null
     relativeOrientation: { x: number; y: number; z: number; w: number } | null
   } {
-    const transforms = this.transforms.value
+    const transforms = this.getTransforms()
     
     // 查找 frame 的父节点和相对变换
     let parent: string | null = null
@@ -561,13 +641,26 @@ class TFManager {
       const transform = children.get(frameName)
       if (transform) {
         parent = parentName
-        relativePosition = transform.translation ? { ...transform.translation } : null
-        relativeOrientation = transform.rotation ? { ...transform.rotation } : null
+        if (transform.translation) {
+          relativePosition = {
+            x: transform.translation.x,
+            y: transform.translation.y,
+            z: transform.translation.z
+          }
+        }
+        if (transform.rotation) {
+          relativeOrientation = {
+            x: transform.rotation.x,
+            y: transform.rotation.y,
+            z: transform.rotation.z,
+            w: transform.rotation.w
+          }
+        }
         break
       }
     }
     
-    // 计算相对于固定帧的绝对位置和方向
+    // 计算相对于固定帧的绝对位置和方向（使用矩阵变换）
     let position: { x: number; y: number; z: number } | null = null
     let orientation: { x: number; y: number; z: number; w: number } | null = null
     
@@ -575,53 +668,18 @@ class TFManager {
       position = { x: 0, y: 0, z: 0 }
       orientation = { x: 0, y: 0, z: 0, w: 1 }
     } else {
-      // 从 frameName 向上查找路径到 fixedFrame
-      const findPathUp = (current: string, target: string, path: string[]): boolean => {
-        if (current === target) {
-          path.push(current)
-          return true
-        }
-
-        // 查找 current 的父节点
-        for (const [parent, children] of transforms.entries()) {
-          if (children.has(current)) {
-            if (findPathUp(parent, target, path)) {
-              path.push(current)
-              return true
-            }
-          }
-        }
-        return false
-      }
-
-      const path: string[] = []
-      if (findPathUp(frameName, fixedFrame, path)) {
-        // path[0] 是 fixedFrame，path[path.length-1] 是 frameName
-        // 累积变换：从 frameName 到 fixedFrame
-        let pos = { x: 0, y: 0, z: 0 }
-        let rot = { x: 0, y: 0, z: 0, w: 1 }
-
-        // 从 frameName 开始向上累积变换到 fixedFrame
-        for (let i = path.length - 1; i > 0; i--) {
-          const child = path[i]      // 当前坐标系
-          const parent = path[i - 1] // 父坐标系
-
-          const parentTransforms = transforms.get(parent)
-          if (!parentTransforms) continue
-
-          const transform = parentTransforms.get(child)
-          if (!transform || !transform.translation || !transform.rotation) continue
-
-          // 累积位置（简化处理，实际应该用矩阵变换）
-          pos.x += transform.translation.x
-          pos.y += transform.translation.y
-          pos.z += transform.translation.z
-          // 旋转累积更复杂，这里使用最后一个旋转（简化处理）
-          rot = transform.rotation
-        }
-
-        position = pos
-        orientation = rot
+      const transformMatrix = this.getTransformMatrix(frameName, fixedFrame)
+      if (transformMatrix) {
+        const pos = new THREE.Vector3()
+        const quat = new THREE.Quaternion()
+        const scale = new THREE.Vector3()
+        transformMatrix.decompose(pos, quat, scale)
+        
+        position = { x: pos.x, y: pos.y, z: pos.z }
+        orientation = { x: quat.x, y: quat.y, z: quat.z, w: quat.w }
+      } else {
+        position = null
+        orientation = null
       }
     }
     
@@ -641,6 +699,12 @@ class TFManager {
     this.unsubscribe()
     this.availableFrames.value.clear()
     this.frames.value = []
+    this.dynamicTransforms.value.clear()
+    this.staticTransforms.value.clear()
+    if (this.dataUpdateThrottleTimer) {
+      clearTimeout(this.dataUpdateThrottleTimer)
+      this.dataUpdateThrottleTimer = null
+    }
   }
 }
 

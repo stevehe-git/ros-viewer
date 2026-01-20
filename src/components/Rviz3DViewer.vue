@@ -1024,7 +1024,7 @@ watch(() => rvizStore.robotConnection.connected, (connected) => {
     // 每100ms检查一次数据更新
     dataCheckTimer = setInterval(() => {
       if (!renderer3D) return
-
+      
       rvizStore.displayComponents.forEach((component) => {
         if (component.enabled) {
           // TF 组件特殊处理：从 tfManager 获取数据
