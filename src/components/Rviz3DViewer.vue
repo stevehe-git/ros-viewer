@@ -861,7 +861,7 @@ watch(() => rvizStore.displayComponents, (newComponents) => {
   // 遍历所有组件，订阅配置了topic的组件（使用统一订阅管理器）
   newComponents.forEach((component) => {
     // 跳过不需要topic的组件类型
-    if (component.type === 'grid' || component.type === 'axes') {
+    if (component.type === 'grid' || component.type === 'axes' || component.type === 'robotmodel') {
       return
     }
 
@@ -995,6 +995,18 @@ watch(() => rvizStore.displayComponents, () => {
       return
     }
 
+    // RobotModel 组件特殊处理：从 URDF 文件或 ROS 参数加载
+    if (component.type === 'robotmodel') {
+      if (component.enabled && renderer3D) {
+        // RobotModel 从配置的 URDF 文件或 ROS 参数加载，不需要传入 message
+        renderer3D.updateComponentRender(component.id, component.type, {})
+        updateComponentVisibility(component.id, component.type)
+      } else if (renderer3D) {
+        renderer3D.setComponentVisibility(component.type, false, component.id)
+      }
+      return
+    }
+
     // 如果组件未启用，跳过
     if (!component.enabled) {
       return
@@ -1029,6 +1041,13 @@ watch(() => rvizStore.robotConnection.connected, (connected) => {
         if (component.enabled) {
           // TF 组件特殊处理：从 tfManager 获取数据
           if (component.type === 'tf') {
+            renderer3D!.updateComponentRender(component.id, component.type, {})
+            updateComponentVisibility(component.id, component.type)
+            return
+          }
+          
+          // RobotModel 组件特殊处理：从 URDF 文件或 ROS 参数加载
+          if (component.type === 'robotmodel') {
             renderer3D!.updateComponentRender(component.id, component.type, {})
             updateComponentVisibility(component.id, component.type)
             return

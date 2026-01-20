@@ -96,7 +96,8 @@ import {
   DataLine,
   Monitor,
   Files,
-  Share
+  Share,
+  Box
 } from '@element-plus/icons-vue'
 
 interface DisplayType {
@@ -211,6 +212,13 @@ const categories = ref([
         name: 'TF',
         icon: Share,
         description: 'Displays the transform tree.',
+        category: 'rviz'
+      },
+      {
+        id: 'robotmodel',
+        name: 'RobotModel',
+        icon: Box,
+        description: 'Displays a robot model from a URDF file.',
         category: 'rviz'
       }
     ]

@@ -94,7 +94,8 @@ import {
   ArrowDown,
   CircleCheck,
   Share,
-  Warning
+  Warning,
+  Box
 } from '@element-plus/icons-vue'
 import GridConfig from './display-configs/GridConfig.vue'
 import AxesConfig from './display-configs/AxesConfig.vue'
@@ -107,6 +108,7 @@ import ImageConfig from './display-configs/ImageConfig.vue'
 import LaserScanConfig from './display-configs/LaserScanConfig.vue'
 import PointCloud2Config from './display-configs/PointCloud2Config.vue'
 import TFConfig from './display-configs/TFConfig.vue'
+import RobotModelConfig from './display-configs/RobotModelConfig.vue'
 import { tfManager } from '@/services/tfManager'
 
 // 使用RViz store
@@ -143,6 +145,15 @@ const expandedSubItems = reactive<Record<string, boolean>>({
 const needsTopic = computed(() => {
   return ['map', 'path', 'laserscan', 'pointcloud2', 'marker', 'image', 'camera'].includes(props.component.type)
 })
+
+// RobotModel 组件需要监听组件启用状态来触发加载
+watch(() => props.component.enabled, (enabled) => {
+  if (props.component.type === 'robotmodel' && enabled) {
+    // RobotModel 组件启用时，触发渲染更新
+    // 这会在 Rviz3DViewer 中通过 updateComponentRender 调用
+    rvizStore.updateComponent(props.component.id, { enabled })
+  }
+}, { immediate: true })
 
 // 使用话题订阅 composable（使用统一的话题订阅管理器）
 const {
@@ -247,7 +258,8 @@ const getComponentIcon = (type: string) => {
     image: Picture,
     laserscan: DataLine,
     pointcloud2: Monitor,
-    tf: Share
+    tf: Share,
+    robotmodel: Box
   }
   return icons[type] || Monitor
 }
@@ -263,7 +275,8 @@ const getConfigComponent = (type: string) => {
     image: ImageConfig,
     laserscan: LaserScanConfig,
     pointcloud2: PointCloud2Config,
-    tf: TFConfig
+    tf: TFConfig,
+    robotmodel: RobotModelConfig
   }
   return components[type] || 'div'
 }

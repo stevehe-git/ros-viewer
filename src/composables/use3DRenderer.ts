@@ -15,6 +15,8 @@ import {
   createROSAxes
 } from '@/services/coordinateConverter'
 import { pointCloudCenterCalculator } from '@/services/pointCloudCenterCalculator'
+import { urdfLoaderService } from '@/services/urdfLoader'
+import type { RobotModel } from '@/services/urdfLoader'
 
 export interface RendererObjects {
   mapMesh?: THREE.Mesh
@@ -27,6 +29,8 @@ export interface RendererObjects {
   pointcloudGroup?: THREE.Group // 支持多个 PointCloud2 组件
   tfGroup?: THREE.Group // TF 可视化组
   axesGroup?: THREE.Group // 支持多个 Axes 组件
+  robotModelGroup?: THREE.Group // 支持多个 RobotModel 组件
+  robotModels?: Map<string, RobotModel> // 存储每个组件的机器人模型
   [key: string]: any
 }
 
@@ -983,6 +987,133 @@ export function use3DRenderer(scene: THREE.Scene) {
   }
 
   /**
+   * 更新 RobotModel 渲染
+   * 
+   * 加载并显示 URDF 机器人模型
+   * 支持从 ROS 参数或文件 URL 加载
+   */
+  async function updateRobotModelRender(componentId: string) {
+    // 获取组件配置
+    const component = rvizStore.displayComponents.find(c => c.id === componentId)
+    if (!component) {
+      console.warn('RobotModel: Component not found', componentId)
+      return
+    }
+
+    const options = component.options || {}
+    const urdfParameter = options.urdfParameter || 'robot_description'
+    const urdfFileUrl = options.urdfFileUrl || ''
+    const visualEnabled = options.visualEnabled !== false // 默认启用
+    const collisionEnabled = options.collisionEnabled || false
+    const alpha = options.alpha ?? 1
+    const packages = options.packages || {}
+
+    // 创建或获取 RobotModel 组
+    let robotModelGroup = renderObjects.value.robotModelGroup
+    if (!robotModelGroup) {
+      robotModelGroup = new THREE.Group()
+      robotModelGroup.name = 'RobotModel_Group'
+      renderObjects.value.robotModelGroup = robotModelGroup
+      scene.add(robotModelGroup)
+    }
+
+    // 初始化 robotModels Map
+    if (!renderObjects.value.robotModels) {
+      renderObjects.value.robotModels = new Map()
+    }
+
+    // 移除旧的该组件的机器人模型
+    const oldModel = renderObjects.value.robotModels.get(componentId)
+    if (oldModel) {
+      robotModelGroup.remove(oldModel.scene)
+      renderObjects.value.robotModels.delete(componentId)
+    }
+
+    try {
+      let robotModel: RobotModel | null = null
+
+      // 优先从文件 URL 加载，否则从 ROS 参数加载
+      if (urdfFileUrl) {
+        robotModel = await urdfLoaderService.loadURDF(urdfFileUrl, {
+          packages,
+          showVisual: visualEnabled,
+          showCollision: collisionEnabled
+        })
+      } else {
+        // 从 ROS 参数加载（需要 ROS 连接）
+        if (rvizStore.robotConnection.connected && rvizStore.robotConnection.protocol === 'ros') {
+          const rosPlugin = rvizStore.getPlugin('ros')
+          if (rosPlugin && typeof (rosPlugin as any).getROSInstance === 'function') {
+            const ros = (rosPlugin as any).getROSInstance()
+            if (ros) {
+              robotModel = await urdfLoaderService.loadURDFFromROSParam(
+                ros,
+                urdfParameter,
+                {
+                  packages,
+                  showVisual: visualEnabled,
+                  showCollision: collisionEnabled
+                }
+              )
+            } else {
+              console.warn('RobotModel: ROS instance not available')
+              return
+            }
+          } else {
+            console.warn('RobotModel: ROS plugin not available. Please provide URDF File URL or connect to ROS.')
+            return
+          }
+        } else {
+          console.warn('RobotModel: No ROS connection available. Please provide URDF File URL or connect to ROS.')
+          return
+        }
+      }
+
+      if (!robotModel) {
+        console.warn('RobotModel: Failed to load robot model')
+        return
+      }
+
+      // 应用透明度
+      robotModel.scene.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach((mat) => {
+              if (mat instanceof THREE.Material) {
+                mat.transparent = true
+                mat.opacity = alpha
+              }
+            })
+          } else if (child.material instanceof THREE.Material) {
+            child.material.transparent = true
+            child.material.opacity = alpha
+          }
+        }
+      })
+
+      // 设置组件 ID
+      robotModel.scene.userData.componentId = componentId
+
+      // 添加到场景
+      robotModelGroup.add(robotModel.scene)
+
+      // 存储模型引用
+      renderObjects.value.robotModels!.set(componentId, robotModel)
+
+      // 设置可见性
+      robotModel.scene.visible = component.enabled
+
+      console.log('RobotModel: Loaded successfully', {
+        componentId,
+        jointsCount: robotModel.joints.size,
+        linksCount: robotModel.links.size
+      })
+    } catch (error) {
+      console.error('RobotModel: Error loading robot model', error)
+    }
+  }
+
+  /**
    * 更新 Axes 渲染
    * 
    * 根据选择的 referenceFrame，将 axes 渲染到对应的坐标系位置
@@ -1199,6 +1330,9 @@ export function use3DRenderer(scene: THREE.Scene) {
       case 'axes':
         updateAxesRender(componentId)
         break
+      case 'robotmodel':
+        updateRobotModelRender(componentId)
+        break
       default:
         break
     }
@@ -1257,6 +1391,18 @@ export function use3DRenderer(scene: THREE.Scene) {
         } else if (renderObjects.value.axesGroup) {
           // 设置所有 Axes 的可见性
           renderObjects.value.axesGroup.visible = visible
+        }
+        break
+      case 'robotmodel':
+        if (renderObjects.value.robotModelGroup && componentId) {
+          // 设置特定组件的可见性
+          const robotModel = renderObjects.value.robotModels?.get(componentId)
+          if (robotModel) {
+            robotModel.scene.visible = visible
+          }
+        } else if (renderObjects.value.robotModelGroup) {
+          // 设置所有 RobotModel 的可见性
+          renderObjects.value.robotModelGroup.visible = visible
         }
         break
       default:
