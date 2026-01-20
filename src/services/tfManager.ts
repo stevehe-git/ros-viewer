@@ -533,60 +533,86 @@ class TFManager {
     }
 
     const transforms = this.getTransforms()
-    let resultMatrix = new THREE.Matrix4().identity()
+    
+    // 重要理解：
+    // TF 数据存储的是 parent → child 的变换，表示 child 在 parent 中的位置
+    // 路径 path[0] = sourceFrame, path[path.length-1] = targetFrame
+    // 我们需要计算 sourceFrame 在 targetFrame 中的位置
+    //
+    // 如果路径是 base_scan → base_link → base_footprint（向上查找）
+    // base_scan 在 base_footprint 中的位置 = 
+    //   base_link 在 base_footprint 中的位置 + (base_scan 在 base_link 中的位置，转换到 base_footprint 坐标系)
+    //
+    // 我们需要从 targetFrame 向下到 sourceFrame 来累积位置
+    // 所以应该反向遍历路径，累积每个 child 在 parent 中的位置
 
-    // 沿着路径累积变换
-    for (let i = 0; i < path.length - 1; i++) {
-      const from = path[i]
-      const to = path[i + 1]
+    let accumulatedPosition = new THREE.Vector3(0, 0, 0)
+    let accumulatedQuaternion = new THREE.Quaternion(0, 0, 0, 1)
 
-      if (!from || !to) {
+    // 反向遍历路径：从 targetFrame 向下到 sourceFrame
+    // 这样我们可以累积每个 child 在 parent 中的位置
+    for (let i = path.length - 1; i > 0; i--) {
+      const parent = path[i]      // 当前 frame（更接近 targetFrame，是 parent）
+      const child = path[i - 1]    // 前一个 frame（更接近 sourceFrame，是 child）
+
+      if (!parent || !child) {
         console.warn(`TFManager: Invalid path segment at index ${i}`)
         continue
       }
 
-      // 尝试查找从from到to的变换（正向）
+      // 尝试查找从 parent 到 child 的变换（parent → child）
+      // 这表示 child 在 parent 中的位置
       let transform: TransformFrame | null = null
-      const fromTransforms = transforms.get(from)
-      if (fromTransforms && fromTransforms.has(to)) {
-        transform = fromTransforms.get(to) || null
+      const parentTransforms = transforms.get(parent)
+      if (parentTransforms && parentTransforms.has(child)) {
+        // 找到了正向变换：parent → child
+        // 这表示 child 在 parent 中的位置
+        transform = parentTransforms.get(child) || null
       }
 
-      // 如果没找到正向变换，尝试反向变换（从to到from，然后取逆）
+      // 如果没找到正向变换，尝试反向变换（从child到parent，然后取逆）
       if (!transform) {
-        const toTransforms = transforms.get(to)
-        if (toTransforms && toTransforms.has(from)) {
-          const inverseTransform = toTransforms.get(from)
+        const childTransforms = transforms.get(child)
+        if (childTransforms && childTransforms.has(parent)) {
+          // 找到了反向变换：child → parent
+          // 这表示 parent 在 child 中的位置，我们需要取逆得到 child 在 parent 中的位置
+          const inverseTransform = childTransforms.get(parent)
           if (inverseTransform && inverseTransform.translation && inverseTransform.rotation) {
-            // 计算逆变换矩阵（在THREE.js坐标系中）
-            const matrix = new THREE.Matrix4()
-            const position = convertROSTranslationToThree(inverseTransform.translation)
-            const quaternion = convertROSRotationToThree(inverseTransform.rotation)
-            matrix.compose(position, quaternion, new THREE.Vector3(1, 1, 1))
-
-            const inverseMatrix = matrix.clone().invert()
-            const invPosition = new THREE.Vector3()
-            const invQuaternion = new THREE.Quaternion()
-            const invScale = new THREE.Vector3()
-            inverseMatrix.decompose(invPosition, invQuaternion, invScale)
-
-            // 将THREE.js坐标转换回ROS坐标
-            // THREE.js(x, y, z) → ROS(x, -z, y)
+            // 在 ROS 坐标系中计算逆变换
+            const rosMatrix = new THREE.Matrix4()
+            const rosPosition = new THREE.Vector3(
+              inverseTransform.translation.x,
+              inverseTransform.translation.y,
+              inverseTransform.translation.z
+            )
+            const rosQuaternion = new THREE.Quaternion(
+              inverseTransform.rotation.x,
+              inverseTransform.rotation.y,
+              inverseTransform.rotation.z,
+              inverseTransform.rotation.w
+            )
+            rosMatrix.compose(rosPosition, rosQuaternion, new THREE.Vector3(1, 1, 1))
+            
+            // 计算逆矩阵
+            const rosInverseMatrix = rosMatrix.clone().invert()
+            const rosInvPosition = new THREE.Vector3()
+            const rosInvQuaternion = new THREE.Quaternion()
+            const rosInvScale = new THREE.Vector3()
+            rosInverseMatrix.decompose(rosInvPosition, rosInvQuaternion, rosInvScale)
+            
             transform = {
-              name: from,
-              parent: to,
+              name: child,
+              parent: parent,
               translation: {
-                x: invPosition.x,      // THREE.js X → ROS X
-                y: -invPosition.z,     // THREE.js -Z → ROS Y（取反）
-                z: invPosition.y       // THREE.js Y → ROS Z
+                x: rosInvPosition.x,
+                y: rosInvPosition.y,
+                z: rosInvPosition.z
               },
               rotation: {
-                // 四元数逆变换：从 THREE.js 转换回 ROS
-                // THREE.js 四元数 (x, y, z, w) → ROS 四元数 (x, -z, -y, w)
-                x: invQuaternion.x,    // X轴不变
-                y: -invQuaternion.z,   // THREE.js Z → ROS Y（取反）
-                z: invQuaternion.y,    // THREE.js Y → ROS Z
-                w: invQuaternion.w
+                x: rosInvQuaternion.x,
+                y: rosInvQuaternion.y,
+                z: rosInvQuaternion.z,
+                w: rosInvQuaternion.w
               }
             }
           }
@@ -594,19 +620,28 @@ class TFManager {
       }
 
       if (transform && transform.translation && transform.rotation) {
+        // 将 ROS 坐标转换为 THREE.js 坐标
         const position = convertROSTranslationToThree(transform.translation)
         const quaternion = convertROSRotationToThree(transform.rotation)
-        const localMatrix = new THREE.Matrix4()
-        localMatrix.compose(position, quaternion, new THREE.Vector3(1, 1, 1))
         
-        // 累积变换：resultMatrix = localMatrix * resultMatrix
-        resultMatrix = localMatrix.multiply(resultMatrix)
+        // 累积位置：需要将 position 转换到 targetFrame 坐标系中
+        // 使用累积的旋转将 position 旋转到正确的方向
+        const rotatedPosition = position.clone().applyQuaternion(accumulatedQuaternion)
+        accumulatedPosition.add(rotatedPosition)
+        
+        // 累积旋转（注意顺序：先应用新的旋转，再应用累积的旋转）
+        accumulatedQuaternion.premultiply(quaternion)
       } else {
-        console.warn(`TFManager: Could not find transform from ${from} to ${to}`)
+        console.warn(`TFManager: Could not find transform from ${parent} to ${child}`)
         return null
       }
     }
 
+    // 构建最终的变换矩阵
+    // 这个矩阵表示 sourceFrame 在 targetFrame 中的位置和旋转
+    const resultMatrix = new THREE.Matrix4()
+    resultMatrix.compose(accumulatedPosition, accumulatedQuaternion, new THREE.Vector3(1, 1, 1))
+    
     return resultMatrix
   }
 
