@@ -184,47 +184,67 @@ export function use3DRenderer(scene: THREE.Scene) {
     // 获取 LaserScan 的 frame_id 和 fixedFrame
     const scanFrame = message.header?.frame_id || 'base_scan'
     const fixedFrame = rvizStore.globalOptions.fixedFrame || 'map'
-    
-    // 计算从 scanFrame 到 fixedFrame 的变换（重用 TF 渲染中的逻辑）
+
+    console.log(`LaserScan: Processing scan in frame "${scanFrame}", fixed frame is "${fixedFrame}"`)
+
+    // 检查 TF 可用性
+    const hasScanFrame = tfManager.hasFrame(scanFrame)
+    const hasFixedFrame = tfManager.hasFrame(fixedFrame)
+    const scanParent = tfManager.getFrameParent(scanFrame)
+    const transformPath = tfManager.getTransformPath(scanFrame, fixedFrame)
+
+    console.log(`LaserScan TF Debug:`, {
+      scanFrame: scanFrame,
+      fixedFrame: fixedFrame,
+      hasScanFrame: hasScanFrame,
+      hasFixedFrame: hasFixedFrame,
+      scanParent: scanParent,
+      transformPath: transformPath,
+      availableFrames: Array.from(tfManager.getFrames())
+    })
+
+    // 计算从 scanFrame 到 fixedFrame 的变换
     const transforms = tfManager.getTransforms()
     const getScanFrameTransformToFixed = (): THREE.Matrix4 | null => {
       if (scanFrame === fixedFrame) {
         return new THREE.Matrix4().identity()
       }
 
-      // 查找路径的辅助函数（从 current 向下查找 target）
-      const findPath = (current: string, target: string, visited: Set<string>, path: string[]): boolean => {
+      // 从 scanFrame 向上查找路径到 fixedFrame
+      const findPathUp = (current: string, target: string, path: string[]): boolean => {
         if (current === target) {
           path.push(current)
           return true
         }
-        if (visited.has(current)) return false
-        visited.add(current)
 
+        // 查找 current 的父节点
         for (const [parent, children] of transforms.entries()) {
-          if (parent === current) {
-            for (const [childName] of children.entries()) {
-              if (findPath(childName, target, visited, path)) {
-                path.push(current)
-                return true
-              }
+          if (children.has(current)) {
+            if (findPathUp(parent, target, path)) {
+              path.push(current)
+              return true
             }
           }
         }
         return false
       }
 
-      // 尝试从 fixedFrame 向下查找路径到 scanFrame
-      const pathDown: string[] = []
-      if (findPath(fixedFrame, scanFrame, new Set(), pathDown)) {
-        // 沿着路径累积变换（从 fixedFrame 到 scanFrame），然后取逆得到从 scanFrame 到 fixedFrame
-        let transformToScan = new THREE.Matrix4().identity()
-        for (let i = pathDown.length - 1; i > 0; i--) {
-          const parent = pathDown[i]
-          const child = pathDown[i - 1]
-          if (!parent || !child) continue
+      const path: string[] = []
+      if (findPathUp(scanFrame, fixedFrame, path)) {
+        // 累积变换矩阵：从 scanFrame 到 fixedFrame
+        let transformMatrix = new THREE.Matrix4().identity()
+
+        // path[0] 是 fixedFrame，path[path.length-1] 是 scanFrame
+        // 我们需要从 scanFrame 开始向上累积变换到 fixedFrame
+        for (let i = path.length - 1; i > 0; i--) {
+          const child = path[i]      // 当前坐标系
+          const parent = path[i - 1] // 父坐标系
+
+          if (!child || !parent) continue
+
           const parentTransforms = transforms.get(parent)
           if (!parentTransforms) continue
+
           const transform = parentTransforms.get(child)
           if (!transform || !transform.translation || !transform.rotation) continue
 
@@ -234,40 +254,25 @@ export function use3DRenderer(scene: THREE.Scene) {
 
           const localTransform = new THREE.Matrix4()
           localTransform.compose(threePosition, threeQuat, new THREE.Vector3(1, 1, 1))
-          transformToScan = transformToScan.multiply(localTransform)
+
+          // 从右向左累积变换（THREE.js矩阵乘法）
+          transformMatrix = localTransform.multiply(transformMatrix)
         }
-        // 取逆得到从 scanFrame 到 fixedFrame 的变换
-        return transformToScan.clone().invert()
+
+        return transformMatrix
       }
 
-      // 尝试从 scanFrame 向下查找路径到 fixedFrame（需要取逆）
-      const pathUp: string[] = []
-      if (findPath(scanFrame, fixedFrame, new Set(), pathUp)) {
-        let transformToFixed = new THREE.Matrix4().identity()
-        for (let i = pathUp.length - 1; i > 0; i--) {
-          const parent = pathUp[i]
-          const child = pathUp[i - 1]
-          if (!parent || !child) continue
-          const parentTransforms = transforms.get(parent)
-          if (!parentTransforms) continue
-          const transform = parentTransforms.get(child)
-          if (!transform || !transform.translation || !transform.rotation) continue
-
-          // ✅ 使用正确的坐标转换公式：ROS(x, y, z) → THREE.js(x, z, -y)
-          const threePosition = convertROSTranslationToThree(transform.translation)
-          const threeQuat = convertROSRotationToThree(transform.rotation)
-
-          const localTransform = new THREE.Matrix4()
-          localTransform.compose(threePosition, threeQuat, new THREE.Vector3(1, 1, 1))
-          transformToFixed = transformToFixed.multiply(localTransform)
-        }
-        return transformToFixed.clone().invert()
-      }
-
+      console.warn(`LaserScan: Could not find TF path from ${scanFrame} to ${fixedFrame}`)
       return null
     }
 
     const scanToFixedTransform = getScanFrameTransformToFixed()
+
+    if (scanToFixedTransform) {
+      console.log(`LaserScan: Found TF transform from ${scanFrame} to ${fixedFrame}`)
+    } else {
+      console.warn(`LaserScan: No TF transform found from ${scanFrame} to ${fixedFrame}. Point cloud will not be transformed.`)
+    }
 
     // 创建点云数据（保持原始坐标，在 base_scan frame 下）
     const points: THREE.Vector3[] = []
@@ -586,17 +591,12 @@ export function use3DRenderer(scene: THREE.Scene) {
         continue
       }
 
-      // 转换 ROS 坐标到 THREE.js 坐标
-      // 当前坐标轴映射：
-      // - ROS X (向前) → THREE.js Z (向前)
-      // - ROS Y (向左) → THREE.js -X (向左)
-      // - ROS Z (向上) → THREE.js Y (向上)
-          // 右手系：Y轴绕Z轴旋转180度，从-X变成+X
-          const threeX = rosY   // ROS Y (向右，右手系) → THREE.js +X
-          const threeY = rosZ   // ROS Z (向上) → THREE.js Y
-          const threeZ = rosX   // ROS X (向前) → THREE.js Z
-
-      points.push(new THREE.Vector3(threeX, threeY, threeZ))
+      // ✅ 使用统一的坐标转换公式：ROS(x, y, z) → THREE.js(x, z, -y)
+      // - ROS X (向前) → THREE.js X
+      // - ROS Y (向左) → THREE.js -Z（取反）
+      // - ROS Z (向上) → THREE.js Y
+      const threePosition = convertROSTranslationToThree({ x: rosX, y: rosY, z: rosZ })
+      points.push(threePosition)
 
       // 获取强度值（如果存在）
       if (intensityOffset !== -1 && pointOffset + intensityOffset + 4 <= data.length) {
@@ -983,42 +983,41 @@ export function use3DRenderer(scene: THREE.Scene) {
 
       const transforms = tfManager.getTransforms()
       
-      // 查找路径的辅助函数
-      const findPath = (current: string, target: string, visited: Set<string>, path: string[]): boolean => {
+      // 从 frameName 向上查找路径到 fixedFrame
+      const findPathUp = (current: string, target: string, path: string[]): boolean => {
         if (current === target) {
           path.push(current)
           return true
         }
-        if (visited.has(current)) return false
-        visited.add(current)
 
-        // 查找 current 的所有子节点
+        // 查找 current 的父节点
         for (const [parent, children] of transforms.entries()) {
-          if (parent === current) {
-            for (const [childName, transform] of children.entries()) {
-              if (findPath(childName, target, visited, path)) {
-                path.push(current)
-                return true
-              }
+          if (children.has(current)) {
+            if (findPathUp(parent, target, path)) {
+              path.push(current)
+              return true
             }
           }
         }
         return false
       }
 
-      // 尝试从 fixedFrame 向下查找路径到 frameName
-      const pathDown: string[] = []
-      const foundDown = findPath(fixedFrame, frameName, new Set(), pathDown)
+      const path: string[] = []
+      if (findPathUp(frameName, fixedFrame, path)) {
+        // 累积变换矩阵：从 frameName 到 fixedFrame
+        let transformMatrix = new THREE.Matrix4().identity()
 
-      if (foundDown) {
-        // 沿着路径累积变换（从 fixedFrame 到 frameName）
-        let result = new THREE.Matrix4().identity()
-        for (let i = pathDown.length - 1; i > 0; i--) {
-          const parent = pathDown[i]
-          const child = pathDown[i - 1]
-          if (!parent || !child) continue
+        // path[0] 是 fixedFrame，path[path.length-1] 是 frameName
+        // 我们需要从 frameName 开始向上累积变换到 fixedFrame
+        for (let i = path.length - 1; i > 0; i--) {
+          const child = path[i]      // 当前坐标系
+          const parent = path[i - 1] // 父坐标系
+
+          if (!child || !parent) continue
+
           const parentTransforms = transforms.get(parent)
           if (!parentTransforms) continue
+
           const transform = parentTransforms.get(child)
           if (!transform || !transform.translation || !transform.rotation) continue
 
@@ -1027,16 +1026,16 @@ export function use3DRenderer(scene: THREE.Scene) {
           const quaternion = convertROSRotationToThree(transform.rotation)
 
           const localTransform = new THREE.Matrix4()
-          localTransform.compose(
-            position,
-            quaternion,
-            new THREE.Vector3(1, 1, 1)
-          )
+          localTransform.compose(position, quaternion, new THREE.Vector3(1, 1, 1))
 
-          result = result.multiply(localTransform)
+          // 从右向左累积变换（THREE.js矩阵乘法）
+          transformMatrix = localTransform.multiply(transformMatrix)
         }
-        return result
+
+        return transformMatrix
       }
+
+      console.warn(`Axes: Could not find TF path from ${frameName} to ${fixedFrame}`)
 
       return null
     }

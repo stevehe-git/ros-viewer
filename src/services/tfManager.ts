@@ -479,6 +479,54 @@ class TFManager {
   }
 
   /**
+   * 检查 frame 是否在 TF 树中
+   */
+  hasFrame(frameName: string): boolean {
+    return this.availableFrames.value.has(frameName)
+  }
+
+  /**
+   * 获取 frame 的父节点
+   */
+  getFrameParent(frameName: string): string | null {
+    for (const [parent, children] of this.transforms.value.entries()) {
+      if (children.has(frameName)) {
+        return parent
+      }
+    }
+    return null
+  }
+
+  /**
+   * 获取从 sourceFrame 到 targetFrame 的变换路径
+   */
+  getTransformPath(sourceFrame: string, targetFrame: string): string[] | null {
+    const findPathUp = (current: string, target: string, path: string[]): boolean => {
+      if (current === target) {
+        path.push(current)
+        return true
+      }
+
+      // 查找 current 的父节点
+      for (const [parent, children] of this.transforms.value.entries()) {
+        if (children.has(current)) {
+          if (findPathUp(parent, target, path)) {
+            path.push(current)
+            return true
+          }
+        }
+      }
+      return false
+    }
+
+    const path: string[] = []
+    if (findPathUp(sourceFrame, targetFrame, path)) {
+      return path
+    }
+    return null
+  }
+
+  /**
    * 获取可用的坐标系列表
    */
   getFrames(): string[] {
@@ -527,43 +575,43 @@ class TFManager {
       position = { x: 0, y: 0, z: 0 }
       orientation = { x: 0, y: 0, z: 0, w: 1 }
     } else {
-      // 查找从 fixedFrame 到 frameName 的路径并累积变换
-      const path: string[] = []
-      const findPath = (current: string, target: string, visited: Set<string>): boolean => {
+      // 从 frameName 向上查找路径到 fixedFrame
+      const findPathUp = (current: string, target: string, path: string[]): boolean => {
         if (current === target) {
           path.push(current)
           return true
         }
-        if (visited.has(current)) return false
-        visited.add(current)
 
-        for (const [p, children] of transforms.entries()) {
-          if (p === current) {
-            for (const childName of children.keys()) {
-              if (childName && findPath(childName, target, visited)) {
-                path.push(current)
-                return true
-              }
+        // 查找 current 的父节点
+        for (const [parent, children] of transforms.entries()) {
+          if (children.has(current)) {
+            if (findPathUp(parent, target, path)) {
+              path.push(current)
+              return true
             }
           }
         }
         return false
       }
 
-      if (findPath(fixedFrame, frameName, new Set())) {
-        // 沿着路径累积变换（使用矩阵累积，更准确）
+      const path: string[] = []
+      if (findPathUp(frameName, fixedFrame, path)) {
+        // path[0] 是 fixedFrame，path[path.length-1] 是 frameName
+        // 累积变换：从 frameName 到 fixedFrame
         let pos = { x: 0, y: 0, z: 0 }
         let rot = { x: 0, y: 0, z: 0, w: 1 }
-        
+
+        // 从 frameName 开始向上累积变换到 fixedFrame
         for (let i = path.length - 1; i > 0; i--) {
-          const p = path[i]
-          const c = path[i - 1]
-          if (!p || !c) continue
-          const parentTransforms = transforms.get(p)
+          const child = path[i]      // 当前坐标系
+          const parent = path[i - 1] // 父坐标系
+
+          const parentTransforms = transforms.get(parent)
           if (!parentTransforms) continue
-          const transform = parentTransforms.get(c)
+
+          const transform = parentTransforms.get(child)
           if (!transform || !transform.translation || !transform.rotation) continue
-          
+
           // 累积位置（简化处理，实际应该用矩阵变换）
           pos.x += transform.translation.x
           pos.y += transform.translation.y
@@ -571,7 +619,7 @@ class TFManager {
           // 旋转累积更复杂，这里使用最后一个旋转（简化处理）
           rot = transform.rotation
         }
-        
+
         position = pos
         orientation = rot
       }

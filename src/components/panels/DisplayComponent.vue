@@ -138,21 +138,6 @@ const expandedSubItems = reactive<Record<string, boolean>>({
   status: true
 })
 
-// 组件类型到消息类型的映射
-const COMPONENT_MESSAGE_TYPES: Record<string, string> = {
-  map: 'nav_msgs/OccupancyGrid',
-  path: 'nav_msgs/Path',
-  laserscan: 'sensor_msgs/LaserScan',
-  pointcloud2: 'sensor_msgs/PointCloud2',
-  marker: 'visualization_msgs/Marker',
-  image: 'sensor_msgs/Image',
-  camera: 'sensor_msgs/Image'
-}
-
-// 获取消息类型
-const messageType = computed(() => {
-  return COMPONENT_MESSAGE_TYPES[props.component.type] || ''
-})
 
 // 话题订阅（仅对需要话题的组件类型）
 const needsTopic = computed(() => {
@@ -162,7 +147,6 @@ const needsTopic = computed(() => {
 // 使用话题订阅 composable（使用统一的话题订阅管理器）
 const {
   status: subscriptionStatus,
-  messageQueue,
   getLatestMessage,
   subscribe,
   unsubscribe
@@ -232,15 +216,15 @@ const getStatusText = (): string => {
     }
     return 'Waiting for data...'
   }
-  
+
   // 其他组件使用 useTopicSubscription 的状态
-  if (subscriptionStatus.value.error) {
+  if (subscriptionStatus.error) {
     return 'Error'
   }
-  if (!subscriptionStatus.value.subscribed) {
+  if (!subscriptionStatus.subscribed) {
     return 'Not Subscribed'
   }
-  if (subscriptionStatus.value.hasData) {
+  if (subscriptionStatus.hasData) {
     return 'Ok'
   }
   return 'Waiting for data...'

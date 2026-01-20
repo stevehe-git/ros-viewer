@@ -14,7 +14,7 @@
  */
 
 import * as THREE from 'three'
-import { convertROSTranslationToThree, convertROSRotationToThree } from './coordinateConverter'
+import { convertROSTranslationToThree, convertROSRotationToThree, createROSAxes } from './coordinateConverter'
 import type { TransformFrame } from './tfManager'
 
 /**
@@ -167,7 +167,7 @@ export class TFRenderer {
           return null
         }
         const fixedFrameNode = findInTree(rootNode)
-        if (fixedFrameNode) {
+        if (fixedFrameNode !== null) {
           // 重新构建以固定帧为根
           const rebuildTree = (node: any, parent: string | null): any => {
             return {
@@ -186,6 +186,8 @@ export class TFRenderer {
     const rootNode = findRootNode()
     if (rootNode) {
       createOrUpdateFrameObject(rootNode, null)
+    } else {
+      console.warn('TFRenderer: No valid root node found for TF tree')
     }
   }
 
@@ -284,54 +286,9 @@ export class TFRenderer {
       return
     }
 
-    // 创建坐标轴组
-    const axesGroup = new THREE.Group()
+    // ✅ 使用统一的ROS坐标轴创建函数
+    const axesGroup = createROSAxes(axisLength, axisRadius)
     axesGroup.name = `Axes_${frameName}`
-
-    // ✅ 核心原理：坐标转换公式 ROS(x, y, z) → THREE.js(x, z, -y)
-    // 
-    // ROS 坐标系定义：
-    // - X 轴（红色）→ 机器人正前方
-    // - Y 轴（绿色）→ 机器人左侧方
-    // - Z 轴（蓝色）→ 垂直地面正上方
-    //
-    // THREE.js 坐标系定义：
-    // - X 轴 → 屏幕右侧方
-    // - Y 轴 → 屏幕正上方
-    // - Z 轴 → 屏幕正前方（朝向自己）
-    //
-    // 坐标转换公式：ROS(x, y, z) → THREE.js(x, z, -y)
-    // - ROS X(向前) → THREE.js X
-    // - ROS Y(向左) → THREE.js -Z（取反后）
-    // - ROS Z(向上) → THREE.js Y
-    //
-    // 因此，在 THREE.js 中绘制坐标轴时：
-    // - X轴（红色，ROS X 向前）：沿着 THREE.js 的 X 方向
-    // - Y轴（绿色，ROS Y 向左）：沿着 THREE.js 的 -Z 方向（Z 的负方向）
-    // - Z轴（蓝色，ROS Z 向上）：沿着 THREE.js 的 Y 方向
-
-    // X 轴（红色）- ROS X 向前 → THREE.js X 方向
-    const xGeometry = new THREE.CylinderGeometry(axisRadius, axisRadius, axisLength, 8)
-    const xMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 })
-    const xAxis = new THREE.Mesh(xGeometry, xMaterial)
-    xAxis.rotation.z = Math.PI / 2  // 旋转到 X 轴方向
-    xAxis.position.x = axisLength / 2
-    axesGroup.add(xAxis)
-
-    // Y 轴（绿色）- ROS Y 向左 → THREE.js -Z 方向
-    const yGeometry = new THREE.CylinderGeometry(axisRadius, axisRadius, axisLength, 8)
-    const yMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
-    const yAxis = new THREE.Mesh(yGeometry, yMaterial)
-    yAxis.rotation.x = Math.PI / 2  // 旋转到 Z 轴方向
-    yAxis.position.z = -axisLength / 2  // 负 Z 方向（对应 ROS Y 向左）
-    axesGroup.add(yAxis)
-
-    // Z 轴（蓝色）- ROS Z 向上 → THREE.js Y 方向
-    const zGeometry = new THREE.CylinderGeometry(axisRadius, axisRadius, axisLength, 8)
-    const zMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff })
-    const zAxis = new THREE.Mesh(zGeometry, zMaterial)
-    zAxis.position.y = axisLength / 2  // Y 方向（向上，对应 ROS Z）
-    axesGroup.add(zAxis)
 
     frameObject.group.add(axesGroup)
     frameObject.axes = axesGroup

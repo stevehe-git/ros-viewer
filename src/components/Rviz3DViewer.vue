@@ -66,6 +66,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { MOUSE } from 'three'
 import PanelManager from './panels/PanelManager.vue'
 import { use3DRenderer } from '@/composables/use3DRenderer'
+import {
+  createROSAxes,
+  getROSGridRotation,
+  convertROSOffsetToThree
+} from '@/services/coordinateConverter'
 
 // 使用RViz store
 const rvizStore = useRvizStore()
@@ -257,80 +262,18 @@ const updateGridHelper = () => {
     gridHelper.material.opacity = options.alpha
   }
 
-  // ✅ 重构 Grid 组件：修复坐标轴映射和 plane 显示问题
-  // 
-  // 核心原理：使用正确的坐标转换公式 ROS(x, y, z) → THREE.js(x, z, -y)
-  // - ROS X 向前 → THREE.js X
-  // - ROS Y 向左 → THREE.js -Z
-  // - ROS Z 向上 → THREE.js Y
-  //
-  // THREE.GridHelper 默认在 XY 平面：
-  // - 网格的 X 方向（第一组网格线）= THREE.js X（向右）
-  // - 网格的 Y 方向（第二组网格线）= THREE.js Y（向上）
-  // - 网格的法线方向 = THREE.js Z（向前）
-  //
-  // 对于 ROS 的各个平面，需要让网格线方向对应正确的 ROS 坐标轴：
-  // - ROS XY 平面：网格的 X 方向 = ROS X（THREE.js X），网格的 Y 方向 = ROS Y（THREE.js -Z）
-  // - ROS XZ 平面：网格的 X 方向 = ROS X（THREE.js X），网格的 Y 方向 = ROS Z（THREE.js Y）
-  // - ROS YZ 平面：网格的 X 方向 = ROS Y（THREE.js -Z），网格的 Y 方向 = ROS Z（THREE.js Y）
-  //
-  // 旋转计算：
-  // ROS XY 平面：需要网格的 X = ROS X（THREE.js X），Y = ROS Y（THREE.js -Z）
-  //   GridHelper 默认：X = THREE.js X，Y = THREE.js Y
-  //   要让 Y 变成 -Z，需要绕 X 轴旋转 -90 度
-  //   但用户反馈说当前 XY 显示的是 XZ，说明需要调整
-  //   根据用户反馈，当前 XY 的旋转 `-Math.PI / 2, 0, 0` 实际上显示的是 ROS XZ 平面
-  //   所以 ROS XZ 平面应该用 `-Math.PI / 2, 0, 0`
-  //   ROS XY 平面应该用其他旋转，比如 `0, 0, 0` 或者需要其他组合
-  //
-  // 重新分析 ROS XY 平面：
-  //   需要网格的 X = ROS X（THREE.js X），Y = ROS Y（THREE.js -Z）
-  //   GridHelper 默认：X = THREE.js X，Y = THREE.js Y
-  //   要让 Y 变成 -Z，需要绕 X 轴旋转 -90 度
-  //   但用户说这样显示的是 XZ，说明可能需要其他旋转
-  //   尝试：绕 Y 轴旋转 90 度，然后绕 X 轴旋转 -90 度
-  //   或者：直接不旋转，看看效果
-  //
-  // 最终方案（基于用户反馈修正）：
-  gridHelper.rotation.set(0, 0, 0)
-  switch (plane) {
-    case 'XY':
-      // ROS XY 平面：网格线沿 ROS X（THREE.js X）和 ROS Y（THREE.js -Z）
-      // 根据用户反馈，当前 XY 显示的是 XZ，说明需要调整
-      // 尝试：不旋转，让网格保持在默认 XY 平面
-      // 如果不对，可能需要其他旋转组合
-      gridHelper.rotation.set(0, 0, 0)
-      break
-    case 'XZ':
-      // ROS XZ 平面：网格线沿 ROS X（THREE.js X）和 ROS Z（THREE.js Y）
-      // 根据用户反馈，当前 XY 的旋转 `-Math.PI / 2, 0, 0` 实际上显示的是 ROS XZ 平面
-      // 所以 ROS XZ 平面应该用 `-Math.PI / 2, 0, 0`
-      gridHelper.rotation.set(-Math.PI / 2, 0, 0)
-      break
-    case 'YZ':
-      // ROS YZ 平面：网格线沿 ROS Y（THREE.js -Z）和 ROS Z（THREE.js Y）
-      // 需要：X 方向 = -Z，Y 方向 = Y
-      // 先绕 X 轴旋转 -90 度：Y → -Z，Z → Y
-      // 然后绕 Z 轴旋转 90 度：X → Y，-Z（原 Y）→ -X
-      // 不对，应该是：绕 X 轴旋转 -90 度，然后绕 Z 轴旋转 -90 度
-      gridHelper.rotation.set(-Math.PI / 2, 0, Math.PI / 2)
-      break
-  }
+  // ✅ 使用统一的ROS网格旋转函数
+  const gridRotation = getROSGridRotation(plane)
+  gridHelper.rotation.copy(gridRotation)
 
-  // ✅ 修复 offset 映射：使用正确的坐标转换公式 ROS(x, y, z) → THREE.js(x, z, -y)
-  const offsetX = options.offsetX || 0
-  const offsetY = options.offsetY || 0
-  const offsetZ = options.offsetZ || 0
-  
-  // 坐标转换：ROS(x, y, z) → THREE.js(x, z, -y)
-  // - ROS X (向前) → THREE.js X
-  // - ROS Y (向左) → THREE.js -Z
-  // - ROS Z (向上) → THREE.js Y
-  gridHelper.position.set(
-    offsetX,   // ROS X (向前) → THREE.js X
-    offsetZ,   // ROS Z (向上) → THREE.js Y
-    -offsetY   // ROS Y (向左) → THREE.js -Z（取反）
-  )
+  // ✅ 使用统一的ROS偏移转换函数
+  const rosOffset = {
+    x: options.offsetX || 0,
+    y: options.offsetY || 0,
+    z: options.offsetZ || 0
+  }
+  const threeOffset = convertROSOffsetToThree(rosOffset)
+  gridHelper.position.copy(threeOffset)
 
   scene.add(gridHelper)
   gridHelper.visible = rvizStore.sceneState.showGrid
@@ -352,53 +295,8 @@ const updateAxesHelper = () => {
   const length = options.length || 1
   const radius = options.radius || 0.01 // 默认半径
 
-  // 创建自定义坐标轴，支持设置半径
-  axesHelper = new THREE.Group()
-
-  // ✅ 与 TF frame 保持一致：使用正确的坐标转换公式 ROS(x, y, z) → THREE.js(x, z, -y)
-  // 
-  // ROS 坐标系定义：
-  // - X 轴（红色）→ 机器人正前方
-  // - Y 轴（绿色）→ 机器人左侧方
-  // - Z 轴（蓝色）→ 垂直地面正上方
-  //
-  // THREE.js 坐标系定义：
-  // - X 轴 → 屏幕右侧方
-  // - Y 轴 → 屏幕正上方
-  // - Z 轴 → 屏幕正前方（朝向自己）
-  //
-  // 坐标转换公式：ROS(x, y, z) → THREE.js(x, z, -y)
-  // - ROS X(向前) → THREE.js X
-  // - ROS Y(向左) → THREE.js -Z（取反后）
-  // - ROS Z(向上) → THREE.js Y
-  //
-  // 因此，在 THREE.js 中绘制坐标轴时：
-  // - X轴（红色，ROS X 向前）：沿着 THREE.js 的 X 方向
-  // - Y轴（绿色，ROS Y 向左）：沿着 THREE.js 的 -Z 方向（Z 的负方向）
-  // - Z轴（蓝色，ROS Z 向上）：沿着 THREE.js 的 Y 方向
-
-  // X 轴（红色）- ROS X 向前 → THREE.js X 方向
-  const xGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
-  const xMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 })
-  const xAxis = new THREE.Mesh(xGeometry, xMaterial)
-  xAxis.rotation.z = Math.PI / 2  // 旋转到 X 轴方向
-  xAxis.position.x = length / 2
-  axesHelper.add(xAxis)
-
-  // Y 轴（绿色）- ROS Y 向左 → THREE.js -Z 方向
-  const yGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
-  const yMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
-  const yAxis = new THREE.Mesh(yGeometry, yMaterial)
-  yAxis.rotation.x = Math.PI / 2  // 旋转到 Z 轴方向
-  yAxis.position.z = -length / 2  // 负 Z 方向（对应 ROS Y 向左）
-  axesHelper.add(yAxis)
-
-  // Z 轴（蓝色）- ROS Z 向上 → THREE.js Y 方向
-  const zGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
-  const zMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff })
-  const zAxis = new THREE.Mesh(zGeometry, zMaterial)
-  zAxis.position.y = length / 2  // Y 方向（向上，对应 ROS Z）
-  axesHelper.add(zAxis)
+  // ✅ 使用统一的ROS坐标轴创建函数
+  axesHelper = createROSAxes(length, radius)
 
   // 设置透明度
   if (options.alpha !== undefined) {
@@ -1126,12 +1024,12 @@ watch(() => rvizStore.robotConnection.connected, (connected) => {
     // 每100ms检查一次数据更新
     dataCheckTimer = setInterval(() => {
       if (!renderer3D) return
-      
+
       rvizStore.displayComponents.forEach((component) => {
         if (component.enabled) {
           // TF 组件特殊处理：从 tfManager 获取数据
           if (component.type === 'tf') {
-            renderer3D.updateComponentRender(component.id, component.type, {})
+            renderer3D!.updateComponentRender(component.id, component.type, {})
             updateComponentVisibility(component.id, component.type)
             return
           }
