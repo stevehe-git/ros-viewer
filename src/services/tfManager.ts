@@ -558,7 +558,7 @@ class TFManager {
         if (toTransforms && toTransforms.has(from)) {
           const inverseTransform = toTransforms.get(from)
           if (inverseTransform && inverseTransform.translation && inverseTransform.rotation) {
-            // 计算逆变换矩阵
+            // 计算逆变换矩阵（在THREE.js坐标系中）
             const matrix = new THREE.Matrix4()
             const position = convertROSTranslationToThree(inverseTransform.translation)
             const quaternion = convertROSRotationToThree(inverseTransform.rotation)
@@ -570,18 +570,22 @@ class TFManager {
             const invScale = new THREE.Vector3()
             inverseMatrix.decompose(invPosition, invQuaternion, invScale)
 
+            // 将THREE.js坐标转换回ROS坐标
+            // THREE.js(x, y, z) → ROS(x, -z, y)
             transform = {
               name: from,
               parent: to,
               translation: {
-                x: invPosition.x,
-                y: invPosition.y,
-                z: invPosition.z
+                x: invPosition.x,      // THREE.js X → ROS X
+                y: -invPosition.z,     // THREE.js -Z → ROS Y（取反）
+                z: invPosition.y       // THREE.js Y → ROS Z
               },
               rotation: {
-                x: invQuaternion.x,
-                y: invQuaternion.y,
-                z: invQuaternion.z,
+                // 四元数逆变换：从 THREE.js 转换回 ROS
+                // THREE.js 四元数 (x, y, z, w) → ROS 四元数 (x, -z, -y, w)
+                x: invQuaternion.x,    // X轴不变
+                y: -invQuaternion.z,   // THREE.js Z → ROS Y（取反）
+                z: invQuaternion.y,    // THREE.js Y → ROS Z
                 w: invQuaternion.w
               }
             }

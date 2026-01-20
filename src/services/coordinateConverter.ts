@@ -1,32 +1,35 @@
 /**
- * ROS 坐标系到 THREE.js 坐标系转换工具
+ * ROS 坐标系到 THREE.js 坐标系转换工具（统一标准版）
  * 
- * 核心原理：
- * - ROS (RViz) 标准坐标系：右手坐标系
- *   X 轴 → 机器人正前方
- *   Y 轴 → 机器人左侧方
- *   Z 轴 → 垂直地面正上方
- *   XY平面是水平面（地面）
+ * 核心原则：所有组件（TF、Axes、Grid、LaserScan）必须使用相同的坐标系转换标准
  * 
- * - THREE.js 标准坐标系：右手坐标系
+ * ROS (RViz) 标准坐标系：右手坐标系
+ *   X 轴 → 机器人正前方（红色）
+ *   Y 轴 → 机器人左侧方（绿色）
+ *   Z 轴 → 垂直地面正上方（蓝色）
+ *   XY平面是水平面（地面，Z=0）
+ * 
+ * THREE.js 标准坐标系：右手坐标系
  *   X 轴 → 屏幕右侧方
  *   Y 轴 → 屏幕正上方（垂直向上）
  *   Z 轴 → 屏幕正前方（朝向自己）
+ *   XZ平面是水平面（地面，Y=0）
  * 
- * 正确的转换公式（确保XY水平面正确显示）：
+ * 统一转换公式（所有组件必须使用）：
  * ROS(x, y, z) → THREE.js(x, z, -y)
  *
  * 坐标轴对应关系：
- * - ROS X(向前) → THREE.js X（向右）
- * - ROS Y(向左) → THREE.js -Z（向后，取反）
- * - ROS Z(向上) → THREE.js Y（向上）
+ * - ROS X(向前，红色) → THREE.js X（向右）
+ * - ROS Y(向左，绿色) → THREE.js -Z（向后，取反）
+ * - ROS Z(向上，蓝色) → THREE.js Y（向上）
  *
  * 这样确保：
  * - ROS的XY平面（水平面，Z=0）→ THREE.js的XZ平面（水平面，Y=0）
  * - ROS的Z轴（垂直向上）→ THREE.js的Y轴（垂直向上）
  * - map、odom、base_link等frames都在Y=0的水平面上
+ * - 所有可视化组件（TF、Axes、Grid、LaserScan）位置一致
  *
- * 可视化颜色：
+ * 可视化颜色标准（与RViz一致）：
  * - ROS X轴：红色 (0xff0000)
  * - ROS Y轴：绿色 (0x00ff00)
  * - ROS Z轴：蓝色 (0x0000ff)
@@ -37,19 +40,12 @@ import * as THREE from 'three'
 /**
  * ROS 平移坐标转换为 THREE.js 坐标
  * 
- * 转换公式：ROS(x, y, z) → THREE.js(x, z, -y)
+ * 统一转换公式：ROS(x, y, z) → THREE.js(x, z, -y)
  * 
- * 这个公式确保：
- * - ROS的XY平面（水平面，Z=0）→ THREE.js的XZ平面（水平面，Y=0）
- * - ROS的Z轴（垂直向上）→ THREE.js的Y轴（垂直向上）
- * - map、odom、base_link等frames都在同一水平面（Y=0），与RViz一致
+ * 所有组件（TF、LaserScan、PointCloud2、Path等）必须使用此函数进行转换
  * 
  * @param rosTranslation ROS 原始平移数据 {x, y, z}
  * @returns THREE.js Vector3 坐标
- * 
- * @example
- * // ROS 数据：x: 1.0, y: 2.0, z: 0.0 (在XY平面)
- * // 转换后：x: 1.0, y: 0.0, z: -2.0 (在XZ平面，Y=0)
  */
 export function convertROSTranslationToThree(rosTranslation: { x: number; y: number; z: number }): THREE.Vector3 {
   return new THREE.Vector3(
@@ -68,8 +64,8 @@ export function convertROSTranslationToThree(rosTranslation: { x: number; y: num
  * 
  * 转换公式：
  * - ROS绕X轴旋转 → THREE.js绕X轴旋转（相同）
- * - ROS绕Y轴旋转 → THREE.js绕Z轴旋转（Y→Z）
- * - ROS绕Z轴旋转 → THREE.js绕-Y轴旋转（Z→-Y）
+ * - ROS绕Y轴旋转 → THREE.js绕Z轴旋转（Y→Z，取反）
+ * - ROS绕Z轴旋转 → THREE.js绕Y轴旋转（Z→Y）
  * 
  * 对于坐标轴映射 ROS(x, y, z) → THREE.js(x, z, -y)：
  * 四元数转换：(x, z, -y, w)
@@ -107,13 +103,20 @@ export function applyROSTransformToObject(
   const position = convertROSTranslationToThree(rosTransform.translation)
   object.position.copy(position)
   
-  // 应用旋转转换（直接赋值）
+  // 应用旋转转换
   const quaternion = convertROSRotationToThree(rosTransform.rotation)
   object.quaternion.copy(quaternion)
 }
 
 /**
- * 创建ROS坐标轴的可视化对象
+ * 创建ROS坐标轴的可视化对象（统一标准版）
+ * 
+ * 所有组件（TF、Axes组件）必须使用此函数创建坐标轴，确保一致性
+ * 
+ * 坐标轴方向（在THREE.js坐标系中）：
+ * - X轴（红色）：沿 THREE.js X 轴方向（向右）
+ * - Y轴（绿色）：沿 THREE.js -Z 轴方向（向后，对应ROS Y向左）
+ * - Z轴（蓝色）：沿 THREE.js Y 轴方向（向上，对应ROS Z向上）
  *
  * @param axisLength 坐标轴长度
  * @param axisRadius 坐标轴半径
@@ -153,7 +156,9 @@ export function createROSAxes(axisLength: number = 1, axisRadius: number = 0.01)
 }
 
 /**
- * 根据ROS平面类型设置THREE.js网格的旋转
+ * 根据ROS平面类型设置THREE.js网格的旋转（统一标准版）
+ * 
+ * Grid 必须使用此函数设置旋转，确保与TF、Axes、LaserScan一致
  *
  * @param plane ROS平面类型 ('XY', 'XZ', 'YZ')
  * @returns THREE.Euler 旋转角度
@@ -186,4 +191,20 @@ export function getROSGridRotation(plane: 'XY' | 'XZ' | 'YZ'): THREE.Euler {
  */
 export function convertROSOffsetToThree(rosOffset: { x: number; y: number; z: number }): THREE.Vector3 {
   return convertROSTranslationToThree(rosOffset)
+}
+
+/**
+ * THREE.js 坐标转换为 ROS 坐标（反向转换）
+ * 
+ * 转换公式：THREE.js(x, y, z) → ROS(x, -z, y)
+ * 
+ * @param threePosition THREE.js Vector3 坐标
+ * @returns ROS 坐标 {x, y, z}
+ */
+export function convertThreeToROSTranslation(threePosition: THREE.Vector3): { x: number; y: number; z: number } {
+  return {
+    x: threePosition.x,    // THREE.js X → ROS X
+    y: -threePosition.z,   // THREE.js -Z → ROS Y（取反）
+    z: threePosition.y     // THREE.js Y → ROS Z
+  }
 }

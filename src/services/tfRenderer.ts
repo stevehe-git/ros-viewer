@@ -12,6 +12,7 @@ import * as THREE from 'three'
 import { createROSAxes } from './coordinateConverter'
 import type { TransformFrame } from './tfManager'
 import { tfManager } from './tfManager'
+import type { PointCloudCenter } from './pointCloudCenterCalculator'
 
 /**
  * TF Frame 的 THREE.js 表示
@@ -32,6 +33,8 @@ export class TFRenderer {
   public rootGroup: THREE.Group
   private frameObjects = new Map<string, TFFrameObject>()
   private fixedFrame: string = 'map'
+  private pointCloudCenter: PointCloudCenter | null = null
+  private enablePointCloudCentering: boolean = false
 
   constructor(scene: THREE.Scene) {
     this.scene = scene
@@ -116,17 +119,66 @@ export class TFRenderer {
   }
 
   /**
+   * 设置点云中心位置（用于将 map 和 odom 居中到点云）
+   */
+  setPointCloudCenter(center: PointCloudCenter | null) {
+    this.pointCloudCenter = center
+    // 重新计算所有frames的位置
+    this.updateAllFramePositions()
+  }
+
+  /**
+   * 启用/禁用点云居中功能
+   */
+  setEnablePointCloudCentering(enabled: boolean) {
+    this.enablePointCloudCentering = enabled
+    this.updateAllFramePositions()
+  }
+
+  /**
    * 更新所有frames的位置（相对于fixed frame）
    * 这是核心方法：计算每个frame相对于fixed frame的绝对变换
+   * 
+   * 当启用点云居中且 fixed frame 是 map 时：
+   * - 点云已经偏移到原点（点云中心在原点）
+   * - map 和 odom 位于原点（点云中心），保持不动
+   * - 其他 frame 保持相对于 map 的相对位置不变
    */
   private updateAllFramePositions() {
+    // 检查是否启用点云居中
+    const isCenteringEnabled = this.enablePointCloudCentering && 
+                               this.fixedFrame === 'map' && 
+                               this.pointCloudCenter && 
+                               this.pointCloudCenter.isValid
+
     this.frameObjects.forEach((frameObject, frameName) => {
       if (frameName === this.fixedFrame) {
-        // fixed frame在原点
+        // fixed frame (map) 的位置
+        // 当启用点云居中时，点云中心已经在原点，所以 map 也在原点
         frameObject.group.position.set(0, 0, 0)
         frameObject.group.quaternion.set(0, 0, 0, 1)
+      } else if (frameName === 'odom' && isCenteringEnabled) {
+        // odom 也需要位于点云中心（原点），与 map 相同位置
+        // 计算 odom 相对于 map 的旋转（忽略平移）
+        const transformMatrix = tfManager.getTransformMatrix('odom', 'map')
+        if (transformMatrix) {
+          const position = new THREE.Vector3()
+          const quaternion = new THREE.Quaternion()
+          const scale = new THREE.Vector3()
+          transformMatrix.decompose(position, quaternion, scale)
+          
+          // odom 位于原点（与 map 相同位置），只保留旋转
+          frameObject.group.position.set(0, 0, 0)
+          frameObject.group.quaternion.copy(quaternion)
+          frameObject.group.visible = true
+        } else {
+          // 如果找不到变换，直接使用原点
+          frameObject.group.position.set(0, 0, 0)
+          frameObject.group.quaternion.set(0, 0, 0, 1)
+          frameObject.group.visible = true
+        }
       } else {
-        // 计算从frameName到fixedFrame的变换矩阵
+        // 其他 frame：计算从 frameName 到 fixedFrame 的变换矩阵
         const transformMatrix = tfManager.getTransformMatrix(frameName, this.fixedFrame)
         
         if (transformMatrix) {
@@ -135,6 +187,10 @@ export class TFRenderer {
           const quaternion = new THREE.Quaternion()
           const scale = new THREE.Vector3()
           transformMatrix.decompose(position, quaternion, scale)
+          
+          // 当启用点云居中且 fixed frame 是 map 时：
+          // 点云已经偏移到原点，所以其他 frame 的位置保持不变（相对于 map 的相对位置不变）
+          // 不需要额外调整，因为点云和 map 都已经偏移了
           
           // 应用变换
           frameObject.group.position.copy(position)

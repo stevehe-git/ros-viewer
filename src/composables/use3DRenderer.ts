@@ -11,8 +11,10 @@ import { tfManager } from '@/services/tfManager'
 import { TFRenderer } from '@/services/tfRenderer'
 import { 
   convertROSTranslationToThree, 
-  convertROSRotationToThree 
+  convertROSRotationToThree,
+  createROSAxes
 } from '@/services/coordinateConverter'
+import { pointCloudCenterCalculator } from '@/services/pointCloudCenterCalculator'
 
 export interface RendererObjects {
   mapMesh?: THREE.Mesh
@@ -422,7 +424,30 @@ export function use3DRenderer(scene: THREE.Scene) {
         pointsObject.applyMatrix4(scanToFixedTransform)
       }
       
+      // 计算点云中心并调整点云位置（如果 fixed frame 是 map）
+      if (fixedFrame === 'map') {
+        const center = pointCloudCenterCalculator.calculateLaserScanCenter(message, fixedFrame)
+        if (center && center.isValid) {
+          // 将点云中心移动到原点（通过偏移整个点云对象）
+          // 这样点云中心就会位于原点，map 和 odom 也会位于原点（点云中心）
+          const offset = center.position.clone().multiplyScalar(-1)
+          pointsObject.position.copy(offset)
+          
+          // 通知 tfRenderer
+          if (tfRenderer) {
+            // 由于点云已经偏移，我们需要告诉 tfRenderer 点云中心在原点
+            const centerAtOrigin: typeof center = {
+              ...center,
+              position: new THREE.Vector3(0, 0, 0)
+            }
+            tfRenderer.setPointCloudCenter(centerAtOrigin)
+            tfRenderer.setEnablePointCloudCentering(true)
+          }
+        }
+      }
+      
       laserscanGroup.add(pointsObject)
+      
       // console.log('LaserScan: Added points to scene', { componentId, pointsCount: points.length, pointSize, useSizeAttenuation, visible: pointsObject.visible, position: pointsObject.position })
     } else if (style === 'Billboards') {
       // 使用 Sprite 渲染（类似广告牌效果）
@@ -447,6 +472,26 @@ export function use3DRenderer(scene: THREE.Scene) {
       // 应用从 scanFrame 到 fixedFrame 的变换
       if (scanToFixedTransform) {
         spriteGroup.applyMatrix4(scanToFixedTransform)
+      }
+      
+      // 计算点云中心并调整点云位置（如果 fixed frame 是 map）
+      if (fixedFrame === 'map') {
+        const center = pointCloudCenterCalculator.calculateLaserScanCenter(message, fixedFrame)
+        if (center && center.isValid) {
+          // 将点云中心移动到原点
+          const offset = center.position.clone().multiplyScalar(-1)
+          spriteGroup.position.copy(offset)
+          
+          // 通知 tfRenderer
+          if (tfRenderer) {
+            const centerAtOrigin: typeof center = {
+              ...center,
+              position: new THREE.Vector3(0, 0, 0)
+            }
+            tfRenderer.setPointCloudCenter(centerAtOrigin)
+            tfRenderer.setEnablePointCloudCentering(true)
+          }
+        }
       }
       
       laserscanGroup.add(spriteGroup)
@@ -475,6 +520,26 @@ export function use3DRenderer(scene: THREE.Scene) {
       // 应用从 scanFrame 到 fixedFrame 的变换
       if (scanToFixedTransform) {
         pointsObject.applyMatrix4(scanToFixedTransform)
+      }
+      
+      // 计算点云中心并调整点云位置（如果 fixed frame 是 map）
+      if (fixedFrame === 'map') {
+        const center = pointCloudCenterCalculator.calculateLaserScanCenter(message, fixedFrame)
+        if (center && center.isValid) {
+          // 将点云中心移动到原点
+          const offset = center.position.clone().multiplyScalar(-1)
+          pointsObject.position.copy(offset)
+          
+          // 通知 tfRenderer
+          if (tfRenderer) {
+            const centerAtOrigin: typeof center = {
+              ...center,
+              position: new THREE.Vector3(0, 0, 0)
+            }
+            tfRenderer.setPointCloudCenter(centerAtOrigin)
+            tfRenderer.setEnablePointCloudCentering(true)
+          }
+        }
       }
       
       laserscanGroup.add(pointsObject)
@@ -707,6 +772,28 @@ export function use3DRenderer(scene: THREE.Scene) {
 
     const pointsObject = new THREE.Points(geometry, material)
     pointsObject.userData.componentId = componentId
+    
+    // 计算点云中心并调整点云位置（如果 fixed frame 是 map）
+    const fixedFrame = rvizStore.globalOptions.fixedFrame || 'map'
+    if (fixedFrame === 'map') {
+      const center = pointCloudCenterCalculator.calculatePointCloud2Center(message, fixedFrame)
+      if (center && center.isValid) {
+        // 将点云中心移动到原点
+        const offset = center.position.clone().multiplyScalar(-1)
+        pointsObject.position.copy(offset)
+        
+        // 通知 tfRenderer
+        if (tfRenderer) {
+          const centerAtOrigin: typeof center = {
+            ...center,
+            position: new THREE.Vector3(0, 0, 0)
+          }
+          tfRenderer.setPointCloudCenter(centerAtOrigin)
+          tfRenderer.setEnablePointCloudCentering(true)
+        }
+      }
+    }
+    
     pointcloudGroup.add(pointsObject)
 
     console.log('PointCloud2: Rendered point cloud', {
@@ -718,52 +805,27 @@ export function use3DRenderer(scene: THREE.Scene) {
   }
 
   /**
-   * 创建坐标系轴可视化
-   * ROS 标准：X(红)向前, Y(绿)向左, Z(蓝)向上
-   * 在 THREE.js 中：X(红)对应 ROS X → THREE.js Z, Y(绿)对应 ROS Y → THREE.js X, Z(蓝)对应 ROS Z → THREE.js Y
+   * 创建坐标系轴可视化（已废弃，请使用 coordinateConverter.createROSAxes）
+   * 
+   * 注意：此函数已被 coordinateConverter.createROSAxes 替代
+   * 所有组件应使用统一的 createROSAxes 函数以确保坐标系一致性
+   * 
+   * @deprecated 使用 createROSAxes 代替
    */
   const createFrameAxes = (axisLength: number, markerAlpha: number): THREE.Group => {
-    const axesGroup = new THREE.Group()
+    // 使用统一的坐标轴创建函数
+    const axesGroup = createROSAxes(axisLength, 0.01)
     
-    // X轴（红色）- ROS X 向前 → THREE.js Z 方向
-    const xGeometry = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(0, 0, axisLength)
-    ])
-    const xMaterial = new THREE.LineBasicMaterial({ 
-      color: 0xff0000, 
-      transparent: true, 
-      opacity: markerAlpha 
+    // 应用透明度
+    axesGroup.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        if (child.material instanceof THREE.MeshBasicMaterial) {
+          child.material.transparent = true
+          child.material.opacity = markerAlpha
+        }
+      }
     })
-    const xAxis = new THREE.Line(xGeometry, xMaterial)
-    axesGroup.add(xAxis)
-
-    // Y轴（绿色）- ROS Y 向左 → THREE.js X 方向（取反后）
-    const yGeometry = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(axisLength, 0, 0)
-    ])
-    const yMaterial = new THREE.LineBasicMaterial({ 
-      color: 0x00ff00, 
-      transparent: true, 
-      opacity: markerAlpha 
-    })
-    const yAxis = new THREE.Line(yGeometry, yMaterial)
-    axesGroup.add(yAxis)
-
-    // Z轴（蓝色）- ROS Z 向上 → THREE.js Y 方向
-    const zGeometry = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(0, axisLength, 0)
-    ])
-    const zMaterial = new THREE.LineBasicMaterial({ 
-      color: 0x0000ff, 
-      transparent: true, 
-      opacity: markerAlpha 
-    })
-    const zAxis = new THREE.Line(zGeometry, zMaterial)
-    axesGroup.add(zAxis)
-
+    
     return axesGroup
   }
 
@@ -1057,41 +1119,20 @@ export function use3DRenderer(scene: THREE.Scene) {
       axesObject.quaternion.set(0, 0, 0, 1)
     }
 
-    // 创建坐标轴（使用圆柱体）
-    // X 轴（红色）- ROS X 向前 → THREE.js X 方向
-    const xGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
-    const xMaterial = new THREE.MeshBasicMaterial({ 
-      color: 0xff0000,
-      transparent: true,
-      opacity: alpha
+    // 使用统一的坐标轴创建函数（确保与TF、Grid等组件一致）
+    const rosAxes = createROSAxes(length, radius)
+    
+    // 应用透明度
+    rosAxes.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        if (child.material instanceof THREE.MeshBasicMaterial) {
+          child.material.transparent = true
+          child.material.opacity = alpha
+        }
+      }
     })
-    const xAxis = new THREE.Mesh(xGeometry, xMaterial)
-    xAxis.rotation.z = Math.PI / 2
-    xAxis.position.x = length / 2
-    axesObject.add(xAxis)
-
-    // Y 轴（绿色）- ROS Y 向左 → THREE.js -Z 方向
-    const yGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
-    const yMaterial = new THREE.MeshBasicMaterial({ 
-      color: 0x00ff00,
-      transparent: true,
-      opacity: alpha
-    })
-    const yAxis = new THREE.Mesh(yGeometry, yMaterial)
-    yAxis.rotation.x = Math.PI / 2
-    yAxis.position.z = -length / 2  // 负 Z 方向（对应 ROS Y 向左）
-    axesObject.add(yAxis)
-
-    // Z 轴（蓝色）- ROS Z 向上 → THREE.js Y 方向
-    const zGeometry = new THREE.CylinderGeometry(radius, radius, length, 8)
-    const zMaterial = new THREE.MeshBasicMaterial({ 
-      color: 0x0000ff,
-      transparent: true,
-      opacity: alpha
-    })
-    const zAxis = new THREE.Mesh(zGeometry, zMaterial)
-    zAxis.position.y = length / 2  // Y 方向（向上，对应 ROS Z）
-    axesObject.add(zAxis)
+    
+    axesObject.add(rosAxes)
 
     // TODO: 实现 Show Trail 功能（如果需要）
   }
