@@ -14,7 +14,6 @@ import {
   convertROSRotationToThree,
   createROSAxes
 } from '@/services/coordinateConverter'
-import { pointCloudCenterCalculator } from '@/services/pointCloudCenterCalculator'
 import { urdfLoaderService } from '@/services/urdfLoader'
 import type { RobotModel } from '@/services/urdfLoader'
 
@@ -428,28 +427,6 @@ export function use3DRenderer(scene: THREE.Scene) {
         pointsObject.applyMatrix4(scanToFixedTransform)
       }
       
-      // 计算点云中心并调整点云位置（如果 fixed frame 是 map）
-      if (fixedFrame === 'map') {
-        const center = pointCloudCenterCalculator.calculateLaserScanCenter(message, fixedFrame)
-        if (center && center.isValid) {
-          // 将点云中心移动到原点（通过偏移整个点云对象）
-          // 这样点云中心就会位于原点，map 和 odom 也会位于原点（点云中心）
-          const offset = center.position.clone().multiplyScalar(-1)
-          pointsObject.position.copy(offset)
-          
-          // 通知 tfRenderer
-          if (tfRenderer) {
-            // 由于点云已经偏移，我们需要告诉 tfRenderer 点云中心在原点
-            const centerAtOrigin: typeof center = {
-              ...center,
-              position: new THREE.Vector3(0, 0, 0)
-            }
-            tfRenderer.setPointCloudCenter(centerAtOrigin)
-            tfRenderer.setEnablePointCloudCentering(true)
-          }
-        }
-      }
-      
       laserscanGroup.add(pointsObject)
       
       // console.log('LaserScan: Added points to scene', { componentId, pointsCount: points.length, pointSize, useSizeAttenuation, visible: pointsObject.visible, position: pointsObject.position })
@@ -478,26 +455,6 @@ export function use3DRenderer(scene: THREE.Scene) {
         spriteGroup.applyMatrix4(scanToFixedTransform)
       }
       
-      // 计算点云中心并调整点云位置（如果 fixed frame 是 map）
-      if (fixedFrame === 'map') {
-        const center = pointCloudCenterCalculator.calculateLaserScanCenter(message, fixedFrame)
-        if (center && center.isValid) {
-          // 将点云中心移动到原点
-          const offset = center.position.clone().multiplyScalar(-1)
-          spriteGroup.position.copy(offset)
-          
-          // 通知 tfRenderer
-          if (tfRenderer) {
-            const centerAtOrigin: typeof center = {
-              ...center,
-              position: new THREE.Vector3(0, 0, 0)
-            }
-            tfRenderer.setPointCloudCenter(centerAtOrigin)
-            tfRenderer.setEnablePointCloudCentering(true)
-          }
-        }
-      }
-      
       laserscanGroup.add(spriteGroup)
     } else {
       // 默认使用 Points（像素大小，不启用距离衰减）
@@ -524,26 +481,6 @@ export function use3DRenderer(scene: THREE.Scene) {
       // 应用从 scanFrame 到 fixedFrame 的变换
       if (scanToFixedTransform) {
         pointsObject.applyMatrix4(scanToFixedTransform)
-      }
-      
-      // 计算点云中心并调整点云位置（如果 fixed frame 是 map）
-      if (fixedFrame === 'map') {
-        const center = pointCloudCenterCalculator.calculateLaserScanCenter(message, fixedFrame)
-        if (center && center.isValid) {
-          // 将点云中心移动到原点
-          const offset = center.position.clone().multiplyScalar(-1)
-          pointsObject.position.copy(offset)
-          
-          // 通知 tfRenderer
-          if (tfRenderer) {
-            const centerAtOrigin: typeof center = {
-              ...center,
-              position: new THREE.Vector3(0, 0, 0)
-            }
-            tfRenderer.setPointCloudCenter(centerAtOrigin)
-            tfRenderer.setEnablePointCloudCentering(true)
-          }
-        }
       }
       
       laserscanGroup.add(pointsObject)
@@ -776,27 +713,6 @@ export function use3DRenderer(scene: THREE.Scene) {
 
     const pointsObject = new THREE.Points(geometry, material)
     pointsObject.userData.componentId = componentId
-    
-    // 计算点云中心并调整点云位置（如果 fixed frame 是 map）
-    const fixedFrame = rvizStore.globalOptions.fixedFrame || 'map'
-    if (fixedFrame === 'map') {
-      const center = pointCloudCenterCalculator.calculatePointCloud2Center(message, fixedFrame)
-      if (center && center.isValid) {
-        // 将点云中心移动到原点
-        const offset = center.position.clone().multiplyScalar(-1)
-        pointsObject.position.copy(offset)
-        
-        // 通知 tfRenderer
-        if (tfRenderer) {
-          const centerAtOrigin: typeof center = {
-            ...center,
-            position: new THREE.Vector3(0, 0, 0)
-          }
-          tfRenderer.setPointCloudCenter(centerAtOrigin)
-          tfRenderer.setEnablePointCloudCentering(true)
-        }
-      }
-    }
     
     pointcloudGroup.add(pointsObject)
 
