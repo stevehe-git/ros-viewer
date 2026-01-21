@@ -13,14 +13,15 @@ import { ref } from 'vue'
 import { useRvizStore } from '@/stores/rviz'
 import { DataConverter } from '@/services/dataConverter'
 import { TFRenderer } from '@/services/tfRenderer'
-import { 
+import {
   updateMapRender,
   updatePathRender,
   updateLaserScanRender,
   updatePointCloudRender,
   updateAxesRender,
   updateTFRender,
-  updateRobotModelRender
+  updateRobotModelRender,
+  cleanupMapComponent
 } from './renderers'
 import type { RobotModel } from '@/services/urdfLoader'
 
@@ -235,6 +236,45 @@ export function use3DRenderer(scene: THREE.Scene) {
   }
 
   /**
+   * 移除单个组件的渲染对象
+   */
+  const removeComponentRender = (componentId: string, componentType: string) => {
+    switch (componentType) {
+      case 'map': {
+        const mapKey = `map_${componentId}`
+        const mapMesh = renderObjects.value[mapKey] as THREE.Mesh | undefined
+        if (mapMesh) {
+          // 清理几何体和材质
+          if (mapMesh.geometry) {
+            mapMesh.geometry.dispose()
+          }
+          if (mapMesh.material) {
+            if (Array.isArray(mapMesh.material)) {
+              mapMesh.material.forEach((mat: any) => mat.dispose())
+            } else {
+              mapMesh.material.dispose()
+            }
+          }
+          // 从场景中移除
+          if (mapMesh.parent) {
+            mapMesh.parent.remove(mapMesh)
+          } else {
+            scene.remove(mapMesh)
+          }
+          // 从 renderObjects 中移除
+          delete renderObjects.value[mapKey]
+        }
+        // 清理地图数据缓存
+        cleanupMapComponent(componentId)
+        break
+      }
+      default:
+        // 其他类型的组件清理可以在这里添加
+        break
+    }
+  }
+
+  /**
    * 清理渲染对象
    */
   const cleanup = () => {
@@ -267,6 +307,7 @@ export function use3DRenderer(scene: THREE.Scene) {
     renderObjects,
     updateComponentRender,
     setComponentVisibility,
+    removeComponentRender,
     cleanup
   }
 }

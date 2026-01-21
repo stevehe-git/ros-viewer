@@ -958,9 +958,27 @@ onMounted(() => {
 })
 
 // 监听组件数据变化，更新 3D 渲染
-// 使用统一的订阅管理器作为数据源
-watch(() => rvizStore.displayComponents, () => {
+// 优化：只监听组件数组的长度和基本属性，避免 deep: true 导致的频繁触发
+watch(() => rvizStore.displayComponents.map(c => ({ id: c.id, enabled: c.enabled, type: c.type })), (newComponents, oldComponents) => {
   if (!renderer3D) return
+
+  // 检测被移除的组件
+  const currentComponentIds = new Set(newComponents.map(c => c.id))
+  const removedComponentIds = new Set(
+    (oldComponents || []).filter(c => !currentComponentIds.has(c.id)).map(c => c.id)
+  )
+
+  // 清理被移除的组件
+  removedComponentIds.forEach(componentId => {
+    const oldComponent = (oldComponents || []).find(c => c.id === componentId)
+    if (oldComponent && renderer3D) {
+      // 清理渲染对象
+      renderer3D.removeComponentRender(componentId, oldComponent.type)
+      // 清理数据缓存和订阅
+      rvizStore.clearComponentData(componentId)
+      rvizStore.unsubscribeComponentTopic(componentId)
+    }
+  })
 
   // 遍历所有组件，检查数据变化并更新渲染
   rvizStore.displayComponents.forEach((component) => {
@@ -1026,7 +1044,7 @@ watch(() => rvizStore.displayComponents, () => {
       renderer3D.setComponentVisibility(component.type, false, component.id)
     }
   })
-}, { deep: true })
+}, { deep: false })
 
 // 监听组件数据变化（从统一订阅管理器）
 // 使用定时器定期检查数据更新，避免过度监听

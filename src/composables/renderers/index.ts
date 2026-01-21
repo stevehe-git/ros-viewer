@@ -1,7 +1,7 @@
 /**
  * 渲染器模块统一导出
  */
-export { updateMapRender } from './mapRenderer'
+export { updateMapRender, cleanupMapComponent } from './mapRenderer'
 export type { MapRendererContext } from './mapRenderer'
 
 export { updatePathRender } from './pathRenderer'
