@@ -13,7 +13,7 @@ import { ref } from 'vue'
 import { useRvizStore } from '@/stores/rviz'
 import { DataConverter } from '@/services/dataConverter'
 import { TFRenderer } from '@/services/tfRenderer'
-import {
+import { 
   updateMapRender,
   updatePathRender,
   updateLaserScanRender,
@@ -68,13 +68,13 @@ export function use3DRenderer(scene: THREE.Scene) {
    * 获取 ROS 实例
    */
   const getROSInstance = () => {
-    if (rvizStore.robotConnection.connected && rvizStore.robotConnection.protocol === 'ros') {
-      const rosPlugin = rvizStore.getPlugin('ros')
-      if (rosPlugin && typeof (rosPlugin as any).getROSInstance === 'function') {
+        if (rvizStore.robotConnection.connected && rvizStore.robotConnection.protocol === 'ros') {
+          const rosPlugin = rvizStore.getPlugin('ros')
+          if (rosPlugin && typeof (rosPlugin as any).getROSInstance === 'function') {
         return (rosPlugin as any).getROSInstance()
       }
     }
-    return null
+      return null
   }
 
   /**
