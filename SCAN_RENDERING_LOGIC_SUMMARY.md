@@ -25,22 +25,23 @@
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  3. ROS → THREE.js 坐标系统转换                             │
+│  3. TF 坐标变换（scanFrame → fixedFrame）                   │
+│     - 获取 scanFrame：message.header.frame_id               │
+│     - 获取 fixedFrame：rvizStore.globalOptions.fixedFrame   │
+│     - 查找 TF 路径：tfManager.getTransformPath()           │
+│     - 累积变换矩阵（在 ROS 坐标系中）：                     │
+│       T_fixed_scan = T_fixed_parent × ... × T_child_scan    │
+│     - 将 TF 变换转换为 THREE.js 坐标系                     │
+└─────────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│  4. ROS → THREE.js 坐标系统转换                             │
 │     - 统一转换公式：ROS(x, y, z) → THREE.js(x, z, -y)      │
 │     - ROS X (向前) → THREE.js X (向右)                      │
 │     - ROS Y (向左) → THREE.js -Z (向后，取反)               │
 │     - ROS Z (向上) → THREE.js Y (向上)                     │
 │     - 代码：convertROSTranslationToThree()                  │
-└─────────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│  4. TF 坐标变换（scanFrame → fixedFrame）                   │
-│     - 获取 scanFrame：message.header.frame_id               │
-│     - 获取 fixedFrame：rvizStore.globalOptions.fixedFrame   │
-│     - 查找 TF 路径：tfManager.getTransformPath()           │
-│     - 累积变换矩阵：                                        │
-│       T_fixed_scan = T_fixed_parent × ... × T_child_scan    │
 │     - 应用变换：pointsObject.applyMatrix4(transformMatrix) │
 └─────────────────────────────────────────────────────────────┘
                           │
@@ -159,28 +160,26 @@ const findPathUp = (current: string, target: string, path: string[]): boolean =>
 
 ### 当前项目流程
 ```
-LaserScan 消息
+1. LaserScan 消息
     ↓
-极坐标转换 (scanFrame)
+2. 极坐标转换 (scanFrame) → 生成 ROS 坐标 (x, y, z)
     ↓
-ROS → THREE.js 坐标转换
+3. TF 变换 (scanFrame → fixedFrame) → 在 ROS 坐标系中变换到 fixedFrame
     ↓
-TF 变换 (scanFrame → fixedFrame)
+4. ROS → THREE.js 坐标转换 → 转换为 THREE.js 坐标 (x, z, -y)
     ↓
-点云中心偏移 (仅 fixedFrame='map')
-    ↓
-THREE.js 渲染
+5. THREE.js 渲染
 ```
 
 ### RViz 流程
 ```
-LaserScan 消息
+1. LaserScan 消息
     ↓
-极坐标转换 (scanFrame)
+2. 极坐标转换 (scanFrame) → 生成 ROS 坐标 (x, y, z)
     ↓
-TF 变换 (scanFrame → fixedFrame)
+3. TF 变换 (scanFrame → fixedFrame) → 在 ROS 坐标系中变换
     ↓
-OGRE 渲染
+4. OGRE 渲染（直接使用 ROS 坐标）
 ```
 
 ## 四、总结
@@ -191,16 +190,19 @@ OGRE 渲染
 3. ✅ **过滤规则一致**：都按照 `range_min/max` 和 `isFinite` 过滤
 
 ### 4.2 实现差异
-1. ⚠️ **坐标系统**：当前项目需要 ROS→THREE.js 转换，RViz 直接使用 ROS 坐标
-2. ⚠️ **渲染引擎**：THREE.js vs OGRE，底层实现不同但视觉效果相似
-3. ⚠️ **点云偏移**：当前项目在 map 坐标系下有特殊偏移逻辑，RViz 无此逻辑
+1. ⚠️ **坐标系统转换顺序**：
+   - 当前项目：极坐标转换 → TF 变换（ROS 坐标系）→ ROS→THREE.js 转换 → THREE.js 渲染
+   - RViz：极坐标转换 → TF 变换（ROS 坐标系）→ OGRE 渲染（直接使用 ROS 坐标）
+   - **说明**：虽然代码实现中先转换坐标再应用 TF 变换矩阵，但 TF 变换矩阵本身是在 ROS 坐标系中计算的，然后转换为 THREE.js 坐标系
+2. ⚠️ **坐标系统**：当前项目需要 ROS→THREE.js 转换，RViz 直接使用 ROS 坐标
+3. ⚠️ **渲染引擎**：THREE.js vs OGRE，底层实现不同但视觉效果相似
 
 ### 4.3 优势与劣势
 
 **当前项目优势**：
-- ✅ 点云中心偏移便于观察大范围地图
 - ✅ 明确区分静态/动态 TF
 - ✅ Web 端渲染，无需安装
+- ✅ 与 RViz 行为完全一致（不进行点云中心偏移）
 
 **RViz 优势**：
 - ✅ 成熟的 TF2 库支持
@@ -209,5 +211,5 @@ OGRE 渲染
 
 ### 4.4 建议
 1. **保持一致性**：核心转换逻辑与 RViz 保持一致，确保数据准确性
-2. **优化体验**：点云中心偏移是合理的优化，但可以考虑添加配置选项
+2. **遵循标准**：已按 RViz 标准实现，不进行点云中心偏移，确保位置准确性
 3. **文档完善**：已通过 `LASERSCAN_DISPLAY_LOGIC.md` 详细记录，保持更新

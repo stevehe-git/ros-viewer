@@ -209,7 +209,8 @@ export function use3DRenderer(scene: THREE.Scene) {
 
     // 计算从 scanFrame 到 fixedFrame 的变换
     const transforms = tfManager.getTransforms()
-    const getScanFrameTransformToFixed = (): THREE.Matrix4 | null => {
+    // 计算 ROS 坐标系中的 TF 变换矩阵（从 scanFrame 到 fixedFrame）
+    const getScanFrameTransformToFixedROS = (): THREE.Matrix4 | null => {
       if (scanFrame === fixedFrame) {
         return new THREE.Matrix4().identity()
       }
@@ -235,7 +236,7 @@ export function use3DRenderer(scene: THREE.Scene) {
 
       const path: string[] = []
       if (findPathUp(scanFrame, fixedFrame, path)) {
-        // 累积变换矩阵：从 scanFrame 到 fixedFrame
+        // 累积变换矩阵：从 scanFrame 到 fixedFrame（在 ROS 坐标系中）
         let transformMatrix = new THREE.Matrix4().identity()
 
         // path[0] 是 fixedFrame，path[path.length-1] 是 scanFrame
@@ -252,12 +253,21 @@ export function use3DRenderer(scene: THREE.Scene) {
           const transform = parentTransforms.get(child)
           if (!transform || !transform.translation || !transform.rotation) continue
 
-          // ✅ 使用正确的坐标转换公式：ROS(x, y, z) → THREE.js(x, z, -y)
-          const threePosition = convertROSTranslationToThree(transform.translation)
-          const threeQuat = convertROSRotationToThree(transform.rotation)
+          // ✅ 在 ROS 坐标系中构建变换矩阵（不进行坐标系统转换）
+          const rosPosition = new THREE.Vector3(
+            transform.translation.x,
+            transform.translation.y,
+            transform.translation.z
+          )
+          const rosQuat = new THREE.Quaternion(
+            transform.rotation.x,
+            transform.rotation.y,
+            transform.rotation.z,
+            transform.rotation.w
+          )
 
           const localTransform = new THREE.Matrix4()
-          localTransform.compose(threePosition, threeQuat, new THREE.Vector3(1, 1, 1))
+          localTransform.compose(rosPosition, rosQuat, new THREE.Vector3(1, 1, 1))
 
           // 从右向左累积变换（THREE.js矩阵乘法）
           transformMatrix = localTransform.multiply(transformMatrix)
@@ -270,15 +280,15 @@ export function use3DRenderer(scene: THREE.Scene) {
       return null
     }
 
-    const scanToFixedTransform = getScanFrameTransformToFixed()
+    const scanToFixedTransformROS = getScanFrameTransformToFixedROS()
 
-    if (scanToFixedTransform) {
+    if (scanToFixedTransformROS) {
       console.log(`LaserScan: Found TF transform from ${scanFrame} to ${fixedFrame}`)
     } else {
       console.warn(`LaserScan: No TF transform found from ${scanFrame} to ${fixedFrame}. Point cloud will not be transformed.`)
     }
 
-    // 创建点云数据（保持原始坐标，在 base_scan frame 下）
+    // 创建点云数据（先在 ROS 坐标系中应用 TF 变换，再转换为 THREE.js 坐标）
     const points: THREE.Vector3[] = []
     const pointIntensities: number[] = [] // 存储每个点对应的强度值
     let intensityMin = Infinity
@@ -294,8 +304,7 @@ export function use3DRenderer(scene: THREE.Scene) {
       }
 
       const angle = angleMin + i * angleIncrement
-      // ✅ 使用正确的坐标转换公式：ROS(x, y, z) → THREE.js(x, z, -y)
-      // 
+      // ✅ 步骤 1: 极坐标转换 → ROS 坐标
       // ROS 坐标系：
       // - X 轴 → 机器人正前方
       // - Y 轴 → 机器人左侧方
@@ -306,11 +315,22 @@ export function use3DRenderer(scene: THREE.Scene) {
       const rosY = range * Math.sin(angle)  // ROS Y (向左)
       const rosZ = 0 // ROS Z = 0 (在XY平面)
       
-      // 转换到 THREE.js 坐标系：ROS(x, y, z) → THREE.js(x, z, -y)
+      // ✅ 步骤 2: 在 ROS 坐标系中应用 TF 变换
+      let rosPoint = new THREE.Vector3(rosX, rosY, rosZ)
+      if (scanToFixedTransformROS) {
+        rosPoint.applyMatrix4(scanToFixedTransformROS)
+      }
+      
+      // ✅ 步骤 3: ROS → THREE.js 坐标转换
+      // 转换公式：ROS(x, y, z) → THREE.js(x, z, -y)
       // - ROS X (向前) → THREE.js X
       // - ROS Y (向左) → THREE.js -Z（取反）
       // - ROS Z (向上) → THREE.js Y
-      const threePosition = convertROSTranslationToThree({ x: rosX, y: rosY, z: rosZ })
+      const threePosition = convertROSTranslationToThree({ 
+        x: rosPoint.x, 
+        y: rosPoint.y, 
+        z: rosPoint.z 
+      })
       points.push(threePosition)
 
       // 获取对应的强度值
@@ -422,11 +442,7 @@ export function use3DRenderer(scene: THREE.Scene) {
       const pointsObject = new THREE.Points(geometry, material)
       pointsObject.userData.componentId = componentId
       
-      // 应用从 scanFrame 到 fixedFrame 的变换
-      if (scanToFixedTransform) {
-        pointsObject.applyMatrix4(scanToFixedTransform)
-      }
-      
+      // TF 变换已在 ROS 坐标系中应用到点，无需再次应用
       laserscanGroup.add(pointsObject)
       
       // console.log('LaserScan: Added points to scene', { componentId, pointsCount: points.length, pointSize, useSizeAttenuation, visible: pointsObject.visible, position: pointsObject.position })
@@ -450,11 +466,7 @@ export function use3DRenderer(scene: THREE.Scene) {
       spriteGroup.userData.componentId = componentId
       sprites.forEach(sprite => spriteGroup.add(sprite))
       
-      // 应用从 scanFrame 到 fixedFrame 的变换
-      if (scanToFixedTransform) {
-        spriteGroup.applyMatrix4(scanToFixedTransform)
-      }
-      
+      // TF 变换已在 ROS 坐标系中应用到点，无需再次应用
       laserscanGroup.add(spriteGroup)
     } else {
       // 默认使用 Points（像素大小，不启用距离衰减）
@@ -478,11 +490,7 @@ export function use3DRenderer(scene: THREE.Scene) {
       const pointsObject = new THREE.Points(geometry, material)
       pointsObject.userData.componentId = componentId
       
-      // 应用从 scanFrame 到 fixedFrame 的变换
-      if (scanToFixedTransform) {
-        pointsObject.applyMatrix4(scanToFixedTransform)
-      }
-      
+      // TF 变换已在 ROS 坐标系中应用到点，无需再次应用
       laserscanGroup.add(pointsObject)
     }
   }
