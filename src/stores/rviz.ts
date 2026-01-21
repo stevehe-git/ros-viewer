@@ -237,7 +237,20 @@ export const useRvizStore = defineStore('rviz', () => {
       map: {
         topic: '/map',
         alpha: 0.7,
-        drawBehind: false
+        colorScheme: 'map',
+        drawBehind: false,
+        resolution: 0,
+        width: 0,
+        height: 0,
+        positionX: 0,
+        positionY: 0,
+        positionZ: 0,
+        orientationX: 0,
+        orientationY: 0,
+        orientationZ: 0,
+        orientationW: 1,
+        unreliable: false,
+        useTimestamp: false
       },
       path: {
         topic: '/path',
