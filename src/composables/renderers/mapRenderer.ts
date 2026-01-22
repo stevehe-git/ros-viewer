@@ -5,6 +5,7 @@
  */
 import * as THREE from 'three'
 import { convertROSTranslationToThree, convertROSRotationToThree } from '@/services/coordinateConverter'
+import { useRvizStore } from '@/stores/rviz'
 import type { Ref } from 'vue'
 import type { RendererObjects } from '../use3DRenderer'
 
@@ -63,6 +64,14 @@ function occupancyToColor(occupancy: number, colorScheme: string = 'map'): [numb
 
 /**
  * 创建地图几何体（使用 BufferGeometry 支持增量更新）
+ * 
+ * 地图坐标系说明（与RViz一致）：
+ * - 地图数据按行优先（row-major）存储
+ * - 数据索引 i = y * width + x，其中 (x, y) 是地图坐标
+ * - 地图原点(0,0)位于左下角
+ * - 地图的origin表示地图左下角在世界坐标系中的位置
+ * - 在ROS坐标系中，地图位于XY平面（Z=0）
+ * - 在THREE.js中，需要旋转到XZ平面（Y=0）
  */
 function createMapGeometry(
   width: number,
@@ -77,16 +86,13 @@ function createMapGeometry(
   const indices: number[] = []
   const uvs: number[] = []
 
-  const mapWidth = width * resolution
-  const mapHeight = height * resolution
-  const halfWidth = mapWidth / 2
-  const halfHeight = mapHeight / 2
-
-  // 为每个网格单元创建顶点
+  // 地图原点在左下角(0,0)，向右为X正方向，向上为Y正方向
+  // 顶点位置从(0,0)开始，不需要偏移到中心
   for (let y = 0; y <= height; y++) {
     for (let x = 0; x <= width; x++) {
-      const px = (x / width) * mapWidth - halfWidth
-      const pz = (y / height) * mapHeight - halfHeight
+      // 地图坐标：从(0,0)开始，向右和向上扩展
+      const px = x * resolution
+      const pz = y * resolution
       vertices.push(px, 0, pz)
       uvs.push(x / width, 1 - y / height) // 翻转 V 坐标以匹配 THREE.js 坐标系
     }
@@ -261,19 +267,76 @@ export function updateMapRender(
   const alpha = options.alpha ?? 0.7
   const colorScheme = options.colorScheme || 'map'
   const drawBehind = options.drawBehind ?? false
-  const positionX = options.positionX ?? 0
-  const positionY = options.positionY ?? 0
-  const positionZ = options.positionZ ?? 0
-  const orientationX = options.orientationX ?? 0
-  const orientationY = options.orientationY ?? 0
-  const orientationZ = options.orientationZ ?? 0
-  const orientationW = options.orientationW ?? 1
 
   const mapInfo = message.info
   const width = options.width || mapInfo.width || 10
   const height = options.height || mapInfo.height || 10
   const resolution = options.resolution || mapInfo.resolution || 0.05
   const headerSeq = message.header?.seq || 0
+
+  // 获取地图原点（从消息中的 origin 字段）
+  // Position 指的是 ROS 中地图原点坐标 (info.origin.position)
+  // 表示地图左下角在世界坐标系中的位置
+  // 如果用户手动设置了 position，则使用手动设置的值（覆盖 origin）
+  // 否则使用消息中的 origin（这是 RViz 的标准行为）
+  const origin = mapInfo.origin || {}
+  const originPosition = origin.position || {}  // ROS 地图原点坐标
+  const originOrientation = origin.orientation || {}  // ROS 地图原点方向
+  
+  // 位置：优先使用用户手动设置的值，否则使用 origin.position（地图原点坐标）
+  const positionX = options.positionX !== undefined ? options.positionX : (originPosition.x ?? 0)
+  const positionY = options.positionY !== undefined ? options.positionY : (originPosition.y ?? 0)
+  const positionZ = options.positionZ !== undefined ? options.positionZ : (originPosition.z ?? 0)
+  
+  // 方向：优先使用用户手动设置的值，否则使用 origin.orientation（地图原点方向）
+  const orientationX = options.orientationX !== undefined ? options.orientationX : (originOrientation.x ?? 0)
+  const orientationY = options.orientationY !== undefined ? options.orientationY : (originOrientation.y ?? 0)
+  const orientationZ = options.orientationZ !== undefined ? options.orientationZ : (originOrientation.z ?? 0)
+  const orientationW = options.orientationW !== undefined ? options.orientationW : (originOrientation.w !== undefined ? originOrientation.w : 1)
+
+  // 自动更新配置选项：如果用户没有手动设置，则使用 origin 的值
+  // 这样配置面板就能显示正确的值了
+  const rvizStore = useRvizStore()
+  const optionsToUpdate: Record<string, any> = {}
+  
+  if (options.positionX === undefined && originPosition.x !== undefined) {
+    optionsToUpdate.positionX = originPosition.x
+  }
+  if (options.positionY === undefined && originPosition.y !== undefined) {
+    optionsToUpdate.positionY = originPosition.y
+  }
+  if (options.positionZ === undefined && originPosition.z !== undefined) {
+    optionsToUpdate.positionZ = originPosition.z
+  }
+  
+  if (options.orientationX === undefined && originOrientation.x !== undefined) {
+    optionsToUpdate.orientationX = originOrientation.x
+  }
+  if (options.orientationY === undefined && originOrientation.y !== undefined) {
+    optionsToUpdate.orientationY = originOrientation.y
+  }
+  if (options.orientationZ === undefined && originOrientation.z !== undefined) {
+    optionsToUpdate.orientationZ = originOrientation.z
+  }
+  if (options.orientationW === undefined && originOrientation.w !== undefined) {
+    optionsToUpdate.orientationW = originOrientation.w
+  }
+  
+  // 自动更新 width、height、resolution（如果用户没有手动设置）
+  if (options.width === undefined && mapInfo.width !== undefined) {
+    optionsToUpdate.width = mapInfo.width
+  }
+  if (options.height === undefined && mapInfo.height !== undefined) {
+    optionsToUpdate.height = mapInfo.height
+  }
+  if (options.resolution === undefined && mapInfo.resolution !== undefined) {
+    optionsToUpdate.resolution = mapInfo.resolution
+  }
+  
+  // 如果有需要更新的选项，更新到 store
+  if (Object.keys(optionsToUpdate).length > 0) {
+    rvizStore.updateComponentOptions(componentId, optionsToUpdate)
+  }
 
   // 转换数据为 Int8Array（占用值范围：-1 到 100）
   const dataArray = new Int8Array(message.data)

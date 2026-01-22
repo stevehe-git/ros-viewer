@@ -42,127 +42,70 @@
         class="config-value"
       />
     </div>
-    <div class="config-row">
+    <!-- 只读参数：从消息中读取，不可修改 -->
+    <div class="config-row readonly-param">
       <span class="config-label">Resolution</span>
-      <el-input-number
-        :model-value="options.resolution"
-        @update:model-value="update('resolution', $event)"
-        size="small"
-        :min="0"
-        :step="0.01"
-        class="config-value"
-      />
+      <span class="config-value readonly-value">{{ readonlyResolution.toFixed(6) }}</span>
     </div>
-    <div class="config-row">
+    <div class="config-row readonly-param">
       <span class="config-label">Width</span>
-      <el-input-number
-        :model-value="options.width"
-        @update:model-value="update('width', $event)"
-        size="small"
-        :min="0"
-        class="config-value"
-      />
+      <span class="config-value readonly-value">{{ readonlyWidth }}</span>
     </div>
-    <div class="config-row">
+    <div class="config-row readonly-param">
       <span class="config-label">Height</span>
-      <el-input-number
-        :model-value="options.height"
-        @update:model-value="update('height', $event)"
-        size="small"
-        :min="0"
-        class="config-value"
-      />
+      <span class="config-value readonly-value">{{ readonlyHeight }}</span>
     </div>
 
-    <!-- Position (可展开) -->
-    <div class="display-sub-item">
+    <!-- Position (可展开，只读) - ROS 地图原点坐标 (info.origin.position) -->
+    <div class="display-sub-item readonly-param">
       <div class="sub-item-header" @click="togglePosition">
         <el-icon class="expand-icon" :class="{ expanded: positionExpanded }">
           <ArrowRight />
         </el-icon>
-        <span class="sub-item-name">Position</span>
-        <span class="config-value-text">{{ `${options.positionX || 0}; ${options.positionY || 0}; ${options.positionZ || 0}` }}</span>
+        <span class="sub-item-name">Position (Origin)</span>
+        <span class="config-value-text">{{ `${readonlyPositionX.toFixed(3)}; ${readonlyPositionY.toFixed(3)}; ${readonlyPositionZ.toFixed(3)}` }}</span>
       </div>
       <div v-show="positionExpanded" class="sub-item-content">
-        <div class="config-row">
+        <div class="config-row readonly-param">
           <span class="config-label">X</span>
-          <el-input-number
-            :model-value="options.positionX"
-            @update:model-value="update('positionX', $event)"
-            size="small"
-            class="config-value"
-          />
+          <span class="config-value readonly-value">{{ readonlyPositionX.toFixed(6) }}</span>
         </div>
-        <div class="config-row">
+        <div class="config-row readonly-param">
           <span class="config-label">Y</span>
-          <el-input-number
-            :model-value="options.positionY"
-            @update:model-value="update('positionY', $event)"
-            size="small"
-            class="config-value"
-          />
+          <span class="config-value readonly-value">{{ readonlyPositionY.toFixed(6) }}</span>
         </div>
-        <div class="config-row">
+        <div class="config-row readonly-param">
           <span class="config-label">Z</span>
-          <el-input-number
-            :model-value="options.positionZ"
-            @update:model-value="update('positionZ', $event)"
-            size="small"
-            class="config-value"
-          />
+          <span class="config-value readonly-value">{{ readonlyPositionZ.toFixed(6) }}</span>
         </div>
       </div>
     </div>
 
-    <!-- Orientation (可展开) -->
-    <div class="display-sub-item">
+    <!-- Orientation (可展开，只读) -->
+    <div class="display-sub-item readonly-param">
       <div class="sub-item-header" @click="toggleOrientation">
         <el-icon class="expand-icon" :class="{ expanded: orientationExpanded }">
           <ArrowRight />
         </el-icon>
         <span class="sub-item-name">Orientation</span>
-        <span class="config-value-text">{{ `${options.orientationX || 0}; ${options.orientationY || 0}; ${options.orientationZ || 0}; ${options.orientationW || 1}` }}</span>
+        <span class="config-value-text">{{ `${readonlyOrientationX.toFixed(3)}; ${readonlyOrientationY.toFixed(3)}; ${readonlyOrientationZ.toFixed(3)}; ${readonlyOrientationW.toFixed(3)}` }}</span>
       </div>
       <div v-show="orientationExpanded" class="sub-item-content">
-        <div class="config-row">
+        <div class="config-row readonly-param">
           <span class="config-label">X</span>
-          <el-input-number
-            :model-value="options.orientationX"
-            @update:model-value="update('orientationX', $event)"
-            size="small"
-            :step="0.01"
-            class="config-value"
-          />
+          <span class="config-value readonly-value">{{ readonlyOrientationX.toFixed(6) }}</span>
         </div>
-        <div class="config-row">
+        <div class="config-row readonly-param">
           <span class="config-label">Y</span>
-          <el-input-number
-            :model-value="options.orientationY"
-            @update:model-value="update('orientationY', $event)"
-            size="small"
-            :step="0.01"
-            class="config-value"
-          />
+          <span class="config-value readonly-value">{{ readonlyOrientationY.toFixed(6) }}</span>
         </div>
-        <div class="config-row">
+        <div class="config-row readonly-param">
           <span class="config-label">Z</span>
-          <el-input-number
-            :model-value="options.orientationZ"
-            @update:model-value="update('orientationZ', $event)"
-            size="small"
-            :step="0.01"
-            class="config-value"
-          />
+          <span class="config-value readonly-value">{{ readonlyOrientationZ.toFixed(6) }}</span>
         </div>
-        <div class="config-row">
+        <div class="config-row readonly-param">
           <span class="config-label">W</span>
-          <el-input-number
-            :model-value="options.orientationW"
-            @update:model-value="update('orientationW', $event)"
-            size="small"
-            :step="0.01"
-            class="config-value"
-          />
+          <span class="config-value readonly-value">{{ readonlyOrientationW.toFixed(6) }}</span>
         </div>
       </div>
     </div>
@@ -187,8 +130,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRvizStore } from '@/stores/rviz'
+import { useTopicSubscription } from '@/composables/useTopicSubscription'
 import { ArrowRight } from '@element-plus/icons-vue'
 
 interface Props {
@@ -198,6 +142,44 @@ interface Props {
 
 const props = defineProps<Props>()
 const rvizStore = useRvizStore()
+
+// 获取最新消息以显示只读参数
+const topicSubscription = useTopicSubscription(
+  props.componentId,
+  'map',
+  props.options?.topic,
+  props.options?.queueSize || 10
+)
+
+// 从消息中提取只读参数
+const mapMessage = computed(() => {
+  const message = topicSubscription.getLatestMessage()
+  if (!message || !message.info) return null
+  return {
+    resolution: message.info.resolution ?? 0,
+    width: message.info.width ?? 0,
+    height: message.info.height ?? 0,
+    origin: message.info.origin || {}
+  }
+})
+
+// 计算显示的只读值
+// Resolution, Width, Height: 从 message.info 中读取
+const readonlyResolution = computed(() => mapMessage.value?.resolution ?? 0)
+const readonlyWidth = computed(() => mapMessage.value?.width ?? 0)
+const readonlyHeight = computed(() => mapMessage.value?.height ?? 0)
+
+// Position: ROS 地图原点坐标 (info.origin.position)
+// 表示地图左下角在世界坐标系中的位置
+const readonlyPositionX = computed(() => mapMessage.value?.origin?.position?.x ?? 0)
+const readonlyPositionY = computed(() => mapMessage.value?.origin?.position?.y ?? 0)
+const readonlyPositionZ = computed(() => mapMessage.value?.origin?.position?.z ?? 0)
+
+// Orientation: ROS 地图原点方向 (info.origin.orientation)
+const readonlyOrientationX = computed(() => mapMessage.value?.origin?.orientation?.x ?? 0)
+const readonlyOrientationY = computed(() => mapMessage.value?.origin?.orientation?.y ?? 0)
+const readonlyOrientationZ = computed(() => mapMessage.value?.origin?.orientation?.z ?? 0)
+const readonlyOrientationW = computed(() => mapMessage.value?.origin?.orientation?.w ?? 1)
 
 const positionExpanded = ref(false)
 const orientationExpanded = ref(false)
@@ -285,5 +267,18 @@ const update = (key: string, value: any) => {
 .sub-item-content {
   padding-left: 32px;
   background: #f5f7fa;
+}
+
+/* 只读参数样式 */
+.readonly-param {
+  opacity: 0.8;
+}
+
+.readonly-value {
+  color: #909399;
+  font-family: monospace;
+  font-size: 12px;
+  user-select: text;
+  cursor: default;
 }
 </style>
