@@ -5,7 +5,6 @@
  */
 import * as THREE from 'three'
 import { convertROSTranslationToThree, convertROSRotationToThree } from '@/services/coordinateConverter'
-import { useRvizStore } from '@/stores/rviz'
 import type { Ref } from 'vue'
 import type { RendererObjects } from '../use3DRenderer'
 
@@ -236,20 +235,14 @@ export function updateMapRender(
     return
   }
   
-  // 如果没有新消息但有现有地图，只更新配置选项
+  // 如果没有新消息但有现有地图，只更新可编辑的配置选项（alpha、drawBehind）
+  // 注意：position 和 orientation 是只读参数，只能从消息中读取，不能在没有消息时更新
   if ((!message || !message.info || !message.data) && existingMapMesh) {
     const options = component.options || {}
     const alpha = options.alpha ?? 0.7
     const drawBehind = options.drawBehind ?? false
-    const positionX = options.positionX ?? 0
-    const positionY = options.positionY ?? 0
-    const positionZ = options.positionZ ?? 0
-    const orientationX = options.orientationX ?? 0
-    const orientationY = options.orientationY ?? 0
-    const orientationZ = options.orientationZ ?? 0
-    const orientationW = options.orientationW ?? 1
     
-    updateMapConfig(existingMapMesh, alpha, drawBehind, positionX, positionY, positionZ, orientationX, orientationY, orientationZ, orientationW)
+    updateMapConfig(existingMapMesh, alpha, drawBehind)
     return
   }
 
@@ -269,74 +262,30 @@ export function updateMapRender(
   const drawBehind = options.drawBehind ?? false
 
   const mapInfo = message.info
-  const width = options.width || mapInfo.width || 10
-  const height = options.height || mapInfo.height || 10
-  const resolution = options.resolution || mapInfo.resolution || 0.05
+  // 只读参数：只从消息中读取，不允许通过 options 覆盖
+  const width = mapInfo.width || 10
+  const height = mapInfo.height || 10
+  const resolution = mapInfo.resolution || 0.05
   const headerSeq = message.header?.seq || 0
 
   // 获取地图原点（从消息中的 origin 字段）
   // Position 指的是 ROS 中地图原点坐标 (info.origin.position)
   // 表示地图左下角在世界坐标系中的位置
-  // 如果用户手动设置了 position，则使用手动设置的值（覆盖 origin）
-  // 否则使用消息中的 origin（这是 RViz 的标准行为）
+  // 这些是只读参数，只能从消息中读取，不允许通过 options 覆盖
   const origin = mapInfo.origin || {}
   const originPosition = origin.position || {}  // ROS 地图原点坐标
   const originOrientation = origin.orientation || {}  // ROS 地图原点方向
   
-  // 位置：优先使用用户手动设置的值，否则使用 origin.position（地图原点坐标）
-  const positionX = options.positionX !== undefined ? options.positionX : (originPosition.x ?? 0)
-  const positionY = options.positionY !== undefined ? options.positionY : (originPosition.y ?? 0)
-  const positionZ = options.positionZ !== undefined ? options.positionZ : (originPosition.z ?? 0)
+  // 位置：只从 origin.position 读取（只读参数）
+  const positionX = originPosition.x ?? 0
+  const positionY = originPosition.y ?? 0
+  const positionZ = originPosition.z ?? 0
   
-  // 方向：优先使用用户手动设置的值，否则使用 origin.orientation（地图原点方向）
-  const orientationX = options.orientationX !== undefined ? options.orientationX : (originOrientation.x ?? 0)
-  const orientationY = options.orientationY !== undefined ? options.orientationY : (originOrientation.y ?? 0)
-  const orientationZ = options.orientationZ !== undefined ? options.orientationZ : (originOrientation.z ?? 0)
-  const orientationW = options.orientationW !== undefined ? options.orientationW : (originOrientation.w !== undefined ? originOrientation.w : 1)
-
-  // 自动更新配置选项：如果用户没有手动设置，则使用 origin 的值
-  // 这样配置面板就能显示正确的值了
-  const rvizStore = useRvizStore()
-  const optionsToUpdate: Record<string, any> = {}
-  
-  if (options.positionX === undefined && originPosition.x !== undefined) {
-    optionsToUpdate.positionX = originPosition.x
-  }
-  if (options.positionY === undefined && originPosition.y !== undefined) {
-    optionsToUpdate.positionY = originPosition.y
-  }
-  if (options.positionZ === undefined && originPosition.z !== undefined) {
-    optionsToUpdate.positionZ = originPosition.z
-  }
-  
-  if (options.orientationX === undefined && originOrientation.x !== undefined) {
-    optionsToUpdate.orientationX = originOrientation.x
-  }
-  if (options.orientationY === undefined && originOrientation.y !== undefined) {
-    optionsToUpdate.orientationY = originOrientation.y
-  }
-  if (options.orientationZ === undefined && originOrientation.z !== undefined) {
-    optionsToUpdate.orientationZ = originOrientation.z
-  }
-  if (options.orientationW === undefined && originOrientation.w !== undefined) {
-    optionsToUpdate.orientationW = originOrientation.w
-  }
-  
-  // 自动更新 width、height、resolution（如果用户没有手动设置）
-  if (options.width === undefined && mapInfo.width !== undefined) {
-    optionsToUpdate.width = mapInfo.width
-  }
-  if (options.height === undefined && mapInfo.height !== undefined) {
-    optionsToUpdate.height = mapInfo.height
-  }
-  if (options.resolution === undefined && mapInfo.resolution !== undefined) {
-    optionsToUpdate.resolution = mapInfo.resolution
-  }
-  
-  // 如果有需要更新的选项，更新到 store
-  if (Object.keys(optionsToUpdate).length > 0) {
-    rvizStore.updateComponentOptions(componentId, optionsToUpdate)
-  }
+  // 方向：只从 origin.orientation 读取（只读参数）
+  const orientationX = originOrientation.x ?? 0
+  const orientationY = originOrientation.y ?? 0
+  const orientationZ = originOrientation.z ?? 0
+  const orientationW = originOrientation.w !== undefined ? originOrientation.w : 1
 
   // 转换数据为 Int8Array（占用值范围：-1 到 100）
   const dataArray = new Int8Array(message.data)
@@ -387,8 +336,15 @@ export function updateMapRender(
       const geometry = mapMesh.geometry as THREE.BufferGeometry
       updateMapColorsIncremental(geometry, null, dataArray, width, height, colorScheme)
     }
-    // 更新其他配置选项
-    updateMapConfig(mapMesh, alpha, drawBehind, positionX, positionY, positionZ, orientationX, orientationY, orientationZ, orientationW)
+    // 更新可编辑的配置选项（alpha、drawBehind）
+    updateMapConfig(mapMesh, alpha, drawBehind)
+    // 更新位置和方向（只读参数，从消息中读取）
+    const rosPosition = { x: positionX, y: positionY, z: positionZ }
+    const rosOrientation = { x: orientationX, y: orientationY, z: orientationZ, w: orientationW }
+    const threePosition = convertROSTranslationToThree(rosPosition)
+    const threeQuat = convertROSRotationToThree(rosOrientation)
+    mapMesh.position.copy(threePosition)
+    mapMesh.quaternion.copy(threeQuat)
     // 更新缓存中的颜色方案
     if (cache) {
       cache.colorScheme = colorScheme
@@ -489,8 +445,15 @@ export function updateMapRender(
       }
     }
 
-    // 更新配置选项（alpha、drawBehind、position、orientation等）
-    updateMapConfig(mapMesh, alpha, drawBehind, positionX, positionY, positionZ, orientationX, orientationY, orientationZ, orientationW)
+    // 更新可编辑的配置选项（alpha、drawBehind）
+    updateMapConfig(mapMesh, alpha, drawBehind)
+    // 更新位置和方向（只读参数，从消息中读取）
+    const rosPosition = { x: positionX, y: positionY, z: positionZ }
+    const rosOrientation = { x: orientationX, y: orientationY, z: orientationZ, w: orientationW }
+    const threePosition = convertROSTranslationToThree(rosPosition)
+    const threeQuat = convertROSRotationToThree(rosOrientation)
+    mapMesh.position.copy(threePosition)
+    mapMesh.quaternion.copy(threeQuat)
 
     // 更新缓存
     const colorAttribute = geometry.getAttribute('color') as THREE.BufferAttribute
@@ -508,33 +471,17 @@ export function updateMapRender(
 
 /**
  * 更新地图配置选项（不改变几何体和颜色）
+ * 注意：position 和 orientation 是只读参数，只能从消息中读取，不能通过此函数更新
  */
 function updateMapConfig(
   mapMesh: THREE.Mesh,
   alpha: number,
-  drawBehind: boolean,
-  positionX: number,
-  positionY: number,
-  positionZ: number,
-  orientationX: number,
-  orientationY: number,
-  orientationZ: number,
-  orientationW: number
+  drawBehind: boolean
 ) {
   // 更新材质透明度
   if (mapMesh.material instanceof THREE.MeshStandardMaterial) {
     mapMesh.material.opacity = alpha
   }
-
-  // 更新位置和方向
-  const rosPosition = { x: positionX, y: positionY, z: positionZ }
-  const rosOrientation = { x: orientationX, y: orientationY, z: orientationZ, w: orientationW }
-
-  const threePosition = convertROSTranslationToThree(rosPosition)
-  const threeQuat = convertROSRotationToThree(rosOrientation)
-
-  mapMesh.position.copy(threePosition)
-  mapMesh.quaternion.copy(threeQuat)
 
   // 更新渲染顺序
   if (drawBehind) {
