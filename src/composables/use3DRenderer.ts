@@ -95,6 +95,8 @@ export function use3DRenderer(scene: THREE.Scene) {
     const unifiedMessage = DataConverter.convert(message, componentType, 'ros')
     if (!unifiedMessage) return
 
+    // console.log(`Renderer: Updating component ${componentType} ${componentId}`)
+
     // 根据组件类型调用相应的渲染函数
     switch (componentType) {
       case 'map':

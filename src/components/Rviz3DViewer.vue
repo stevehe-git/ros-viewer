@@ -122,6 +122,7 @@ let lastRenderTime = 0
 let gridHelper: THREE.GridHelper
 let axesHelper: THREE.Group
 let robotGroup: THREE.Group
+let mapMesh: THREE.Mesh
 
 // 使用 3D 渲染器 composable（在场景初始化后设置）
 let renderer3D: ReturnType<typeof use3DRenderer> | null = null
@@ -177,8 +178,15 @@ const initScene = () => {
   // 创建机器人模型
   createRobot()
 
+  // 创建地图
+  createMap()
+
   // 初始化 3D 渲染器
   renderer3D = use3DRenderer(scene)
+  // 将创建的网格对象传递给渲染器
+  if (renderer3D) {
+    renderer3D.renderObjects.value.mapMesh = mapMesh
+  }
 
   // 添加灯光
   const ambientLight = new THREE.AmbientLight(0x404040, 0.6)
@@ -327,6 +335,25 @@ const createRobot = () => {
   robotGroup.position.set(0, 0, 0)
   scene.add(robotGroup)
 }
+
+const createMap = () => {
+  // 创建简单的占用网格地图
+  const mapGeometry = new THREE.PlaneGeometry(10, 10, 10, 10)
+  const mapMaterial = new THREE.MeshStandardMaterial({
+    color: 0x666666,
+    wireframe: false,
+    transparent: true,
+    opacity: 0.5,
+    side: THREE.DoubleSide
+  })
+  mapMesh = new THREE.Mesh(mapGeometry, mapMaterial)
+  mapMesh.rotation.x = -Math.PI / 2
+  mapMesh.position.y = 0
+  mapMesh.receiveShadow = true
+  mapMesh.visible = false // 默认隐藏，直到有有效topic和数据
+  scene.add(mapMesh)
+}
+
 
 const resetCamera = () => {
   camera.position.set(10, 10, 10)
@@ -735,7 +762,11 @@ watch(() => rvizStore.sceneState.showRobot, (val: boolean) => {
   }
 })
 
-// Map 可见性由 mapRenderer 管理，不需要单独的 watch
+watch(() => rvizStore.sceneState.showMap, (val: boolean) => {
+  if (mapMesh) {
+    mapMesh.visible = val
+  }
+})
 
 
 watch(() => rvizStore.sceneState.backgroundColor, (val: string) => {
@@ -809,7 +840,9 @@ const updateComponentVisibility = (componentId: string, componentType: string) =
   // 根据组件类型更新 sceneState
   switch (componentType) {
     case 'map':
-      // Map 可见性由 mapRenderer 管理，这里只更新 sceneState
+      if (mapMesh) {
+        mapMesh.visible = visible
+      }
       rvizStore.sceneState.showMap = visible
       break
     // 其他组件类型的可视化可以在这里添加
@@ -892,7 +925,11 @@ watch(() => rvizStore.robotConnection.connected, (connected) => {
     }, 300)
   } else {
     // 断开连接时，统一订阅管理器会自动处理取消订阅
-    // Map 可见性由 mapRenderer 管理，不需要手动处理
+    
+    // 隐藏所有依赖数据的组件
+    if (mapMesh) {
+      mapMesh.visible = false
+    }
   }
 })
 

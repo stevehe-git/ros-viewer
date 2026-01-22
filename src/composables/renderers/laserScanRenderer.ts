@@ -188,13 +188,13 @@ export function updateLaserScanRender(
   const scanFrame = message.header?.frame_id || 'base_scan'
   const fixedFrame = getFixedFrame()
 
-  console.log(`LaserScan: Processing scan in frame "${scanFrame}", fixed frame is "${fixedFrame}"`)
+  // console.log(`LaserScan: Processing scan in frame "${scanFrame}", fixed frame is "${fixedFrame}"`)
 
   // 计算 ROS 坐标系中的 TF 变换矩阵
   const scanToFixedTransformROS = getScanFrameTransformToFixedROS(scanFrame, fixedFrame)
 
   if (scanToFixedTransformROS) {
-    console.log(`LaserScan: Found TF transform from ${scanFrame} to ${fixedFrame}`)
+    // console.log(`LaserScan: Found TF transform from ${scanFrame} to ${fixedFrame}`)
   } else {
     console.warn(`LaserScan: No TF transform found from ${scanFrame} to ${fixedFrame}. Point cloud will not be transformed.`)
   }
