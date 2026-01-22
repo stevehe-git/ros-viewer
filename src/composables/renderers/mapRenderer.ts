@@ -24,6 +24,7 @@ interface MapDataCache {
   data: Int8Array // 原始占用值数组
   colorArray: Float32Array // 颜色数组 (r, g, b) per vertex
   headerSeq: number // header.seq 用于检测数据变化
+  colorScheme?: string // 颜色方案，用于检测颜色方案变化
 }
 
 // 每个组件的地图数据缓存
@@ -213,21 +214,47 @@ export function updateMapRender(
 ) {
   const { scene, renderObjects, getComponent } = context
 
-  if (!message || !message.info || !message.data) return
-
-  // 节流检查
-  const now = Date.now()
-  const lastUpdate = lastUpdateTime.get(componentId) || 0
-  if (now - lastUpdate < UPDATE_THROTTLE_MS) {
-    return // 跳过，还在节流期内
-  }
-  lastUpdateTime.set(componentId, now)
-
   // 获取组件配置
   const component = getComponent(componentId)
   if (!component) {
     console.warn('Map: Component not found', componentId)
     return
+  }
+
+  // 检查是否已有地图，如果已有地图但没新消息，仍然可以更新配置
+  const mapKey = `map_${componentId}`
+  const existingMapMesh = renderObjects.value[mapKey] as THREE.Mesh | undefined
+  
+  // 如果没有消息且没有现有地图，无法创建，直接返回
+  if ((!message || !message.info || !message.data) && !existingMapMesh) {
+    return
+  }
+  
+  // 如果没有新消息但有现有地图，只更新配置选项
+  if ((!message || !message.info || !message.data) && existingMapMesh) {
+    const options = component.options || {}
+    const alpha = options.alpha ?? 0.7
+    const drawBehind = options.drawBehind ?? false
+    const positionX = options.positionX ?? 0
+    const positionY = options.positionY ?? 0
+    const positionZ = options.positionZ ?? 0
+    const orientationX = options.orientationX ?? 0
+    const orientationY = options.orientationY ?? 0
+    const orientationZ = options.orientationZ ?? 0
+    const orientationW = options.orientationW ?? 1
+    
+    updateMapConfig(existingMapMesh, alpha, drawBehind, positionX, positionY, positionZ, orientationX, orientationY, orientationZ, orientationW)
+    return
+  }
+
+  // 节流检查（只在有新消息时进行节流，配置更新不受节流限制）
+  const now = Date.now()
+  const lastUpdate = lastUpdateTime.get(componentId) || 0
+  if (message && message.info && message.data && now - lastUpdate < UPDATE_THROTTLE_MS) {
+    return // 跳过，还在节流期内
+  }
+  if (message && message.info && message.data) {
+    lastUpdateTime.set(componentId, now)
   }
 
   const options = component.options || {}
@@ -248,19 +275,63 @@ export function updateMapRender(
   const resolution = options.resolution || mapInfo.resolution || 0.05
   const headerSeq = message.header?.seq || 0
 
-  // 检查数据是否真的变化了
-  const cache = mapDataCache.get(componentId)
-  if (cache && cache.headerSeq === headerSeq && cache.width === width && cache.height === height) {
-    // 数据没有变化，跳过渲染
-    return
-  }
-
   // 转换数据为 Int8Array（占用值范围：-1 到 100）
   const dataArray = new Int8Array(message.data)
 
-  // 使用组件ID作为key
-  const mapKey = `map_${componentId}`
+  // 使用已声明的mapKey
   let mapMesh = renderObjects.value[mapKey] as THREE.Mesh | undefined
+
+  // 检查数据是否真的变化了
+  const cache = mapDataCache.get(componentId)
+  const dataChanged = !cache || cache.headerSeq !== headerSeq || cache.width !== width || cache.height !== height
+  
+  // 检查配置选项是否变化了（即使数据没变化，配置变化也需要更新）
+  let configChanged = false
+  if (!mapMesh) {
+    // 如果地图不存在，需要创建（配置变化）
+    configChanged = true
+  } else {
+    // 检查各个配置选项是否变化
+    const material = mapMesh.material instanceof THREE.MeshStandardMaterial ? mapMesh.material : null
+    if (material) {
+      configChanged = configChanged || material.opacity !== alpha
+    }
+    configChanged = configChanged || mapMesh.renderOrder !== (drawBehind ? -1 : 0)
+    configChanged = configChanged || cache?.colorScheme !== colorScheme
+    
+    // 检查位置和方向是否变化
+    const currentPos = mapMesh.position
+    const currentQuat = mapMesh.quaternion
+    const rosPosition = { x: positionX, y: positionY, z: positionZ }
+    const rosOrientation = { x: orientationX, y: orientationY, z: orientationZ, w: orientationW }
+    const expectedPos = convertROSTranslationToThree(rosPosition)
+    const expectedQuat = convertROSRotationToThree(rosOrientation)
+    
+    configChanged = configChanged || 
+      !currentPos.equals(expectedPos) || 
+      !currentQuat.equals(expectedQuat)
+  }
+
+  // 如果数据和配置都没变化，跳过渲染
+  if (!dataChanged && !configChanged && mapMesh) {
+    return
+  }
+  
+  // 如果只有配置变化但数据没变化，只需要更新配置
+  if (!dataChanged && configChanged && mapMesh) {
+    // 如果颜色方案变化，需要重新计算颜色
+    if (cache?.colorScheme !== colorScheme) {
+      const geometry = mapMesh.geometry as THREE.BufferGeometry
+      updateMapColorsIncremental(geometry, null, dataArray, width, height, colorScheme)
+    }
+    // 更新其他配置选项
+    updateMapConfig(mapMesh, alpha, drawBehind, positionX, positionY, positionZ, orientationX, orientationY, orientationZ, orientationW)
+    // 更新缓存中的颜色方案
+    if (cache) {
+      cache.colorScheme = colorScheme
+    }
+    return
+  }
 
   if (!mapMesh) {
     // 创建新地图
@@ -312,7 +383,8 @@ export function updateMapRender(
       resolution,
       data: new Int8Array(dataArray),
       colorArray: colorAttribute ? (colorAttribute.array as Float32Array).slice() : new Float32Array(0),
-      headerSeq
+      headerSeq,
+      colorScheme
     })
   } else {
     // 更新现有地图
@@ -328,43 +400,34 @@ export function updateMapRender(
       updateMapColorsIncremental(newGeometry, null, dataArray, width, height, colorScheme)
       mapMesh.geometry = newGeometry
     } else {
-      // 尺寸未变化，增量更新颜色
+      // 尺寸未变化，检查是否需要更新颜色
       const oldData = cache?.data || null
-      const changedCount = updateMapColorsIncremental(
-        geometry,
-        oldData,
-        dataArray,
-        width,
-        height,
-        colorScheme
-      )
+      const oldColorScheme = cache?.colorScheme || 'map'
+      
+      // 如果颜色方案变化了，需要重新计算所有颜色
+      if (oldColorScheme !== colorScheme) {
+        // 颜色方案变化，重新计算所有颜色
+        updateMapColorsIncremental(geometry, null, dataArray, width, height, colorScheme)
+      } else if (dataChanged) {
+        // 数据变化但颜色方案没变，增量更新
+        const changedCount = updateMapColorsIncremental(
+          geometry,
+          oldData,
+          dataArray,
+          width,
+          height,
+          colorScheme
+        )
 
-      if (changedCount > 0) {
-        // 只在有变化时输出日志（调试用）
-        // console.log(`Map ${componentId}: Updated ${changedCount} cells`)
+        if (changedCount > 0) {
+          // 只在有变化时输出日志（调试用）
+          // console.log(`Map ${componentId}: Updated ${changedCount} cells`)
+        }
       }
     }
 
-    // 更新材质属性
-    if (mapMesh.material instanceof THREE.MeshStandardMaterial) {
-      mapMesh.material.opacity = alpha
-    }
-
-    // 更新位置和方向
-    const rosPosition = { x: positionX, y: positionY, z: positionZ }
-    const rosOrientation = { x: orientationX, y: orientationY, z: orientationZ, w: orientationW }
-
-    const threePosition = convertROSTranslationToThree(rosPosition)
-    const threeQuat = convertROSRotationToThree(rosOrientation)
-
-    mapMesh.position.copy(threePosition)
-    mapMesh.quaternion.copy(threeQuat)
-
-    if (drawBehind) {
-      mapMesh.renderOrder = -1
-    } else {
-      mapMesh.renderOrder = 0
-    }
+    // 更新配置选项（alpha、drawBehind、position、orientation等）
+    updateMapConfig(mapMesh, alpha, drawBehind, positionX, positionY, positionZ, orientationX, orientationY, orientationZ, orientationW)
 
     // 更新缓存
     const colorAttribute = geometry.getAttribute('color') as THREE.BufferAttribute
@@ -374,8 +437,47 @@ export function updateMapRender(
       resolution,
       data: new Int8Array(dataArray),
       colorArray: colorAttribute ? (colorAttribute.array as Float32Array).slice() : new Float32Array(0),
-      headerSeq
+      headerSeq,
+      colorScheme
     })
+  }
+}
+
+/**
+ * 更新地图配置选项（不改变几何体和颜色）
+ */
+function updateMapConfig(
+  mapMesh: THREE.Mesh,
+  alpha: number,
+  drawBehind: boolean,
+  positionX: number,
+  positionY: number,
+  positionZ: number,
+  orientationX: number,
+  orientationY: number,
+  orientationZ: number,
+  orientationW: number
+) {
+  // 更新材质透明度
+  if (mapMesh.material instanceof THREE.MeshStandardMaterial) {
+    mapMesh.material.opacity = alpha
+  }
+
+  // 更新位置和方向
+  const rosPosition = { x: positionX, y: positionY, z: positionZ }
+  const rosOrientation = { x: orientationX, y: orientationY, z: orientationZ, w: orientationW }
+
+  const threePosition = convertROSTranslationToThree(rosPosition)
+  const threeQuat = convertROSRotationToThree(rosOrientation)
+
+  mapMesh.position.copy(threePosition)
+  mapMesh.quaternion.copy(threeQuat)
+
+  // 更新渲染顺序
+  if (drawBehind) {
+    mapMesh.renderOrder = -1
+  } else {
+    mapMesh.renderOrder = 0
   }
 }
 
